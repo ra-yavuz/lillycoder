@@ -9,10 +9,17 @@ What we look for:
   port  | path        | typical server
   ------|-------------|--------------------------------------
   11434 | /api/tags   | ollama (its native API; we adapt to /v1)
+  11435 | /api/tags   | ollama secondary instance
   8080  | /v1/models  | llama.cpp llama-server default
+  8000  | /v1/models  | vLLM, text-generation-webui openai ext, generic FastAPI
+  5001  | /v1/models  | koboldcpp default
   1234  | /v1/models  | LM Studio
+  4891  | /v1/models  | GPT4All
   18080 | /v1/models  | hydra-llm (compatibility, not dependency)
+  18092 | /v1/models  | allm
   8201  | /v1/models  | the legacy CONSOLE/ default port
+  9090  | /v1/models  | mlx-lm and friends
+  9091  | /v1/models  | mlx-lm secondary
 
 Any server that returns a non-empty model list is a candidate. Lillycoder
 does not care which family the server belongs to: as long as it speaks
@@ -29,10 +36,17 @@ import httpx
 # Each probe: (port, path, friendly_label_when_detected, list_of_model_names_field)
 KNOWN_PROBES: list[tuple[int, str, str, str]] = [
     (11434, "/api/tags",  "ollama",        "models"),
+    (11435, "/api/tags",  "ollama",        "models"),
     (8080,  "/v1/models", "openai-compat", "data"),
+    (8000,  "/v1/models", "openai-compat", "data"),
+    (5001,  "/v1/models", "koboldcpp",     "data"),
     (1234,  "/v1/models", "lm-studio",     "data"),
+    (4891,  "/v1/models", "gpt4all",       "data"),
     (18080, "/v1/models", "openai-compat", "data"),
+    (18092, "/v1/models", "allm",          "data"),
     (8201,  "/v1/models", "openai-compat", "data"),
+    (9090,  "/v1/models", "openai-compat", "data"),
+    (9091,  "/v1/models", "openai-compat", "data"),
 ]
 
 

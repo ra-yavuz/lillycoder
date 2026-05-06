@@ -1,3 +1,14 @@
+lillycoder (0.1.1-1) unstable; urgency=low
+
+  * Discovery: probe more default LLM server ports out of the box -
+    8000 (vLLM, text-generation-webui), 5001 (koboldcpp), 4891 (GPT4All),
+    11435 (ollama secondary), 9090/9091 (mlx-lm), and 18092 (allm).
+  * REPL: show a "lilly is thinking..." spinner from request send until
+    the first token (or first tool call) arrives, so it's clear the
+    model is working rather than hung.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Wed, 06 May 2026 16:00:00 +0000
+
 lillycoder (0.1.0-1) unstable; urgency=low
 
   * Initial release.

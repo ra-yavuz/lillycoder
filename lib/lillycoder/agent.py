@@ -171,6 +171,13 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
     accum_tools: dict[int, dict] = {}
     finish_reason = None
 
+    # Spinner shown while waiting for the model's first byte. Stopped as
+    # soon as any delta (content or tool_call) arrives so streamed output
+    # isn't visually fighting the spinner.
+    status = console.status("[dim]lilly is thinking...[/dim]", spinner="dots")
+    status.start()
+    spinner_active = True
+
     try:
         with client.stream("POST", "/chat/completions",
                            json=payload, timeout=None) as resp:
@@ -189,13 +196,23 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
                 if fr:
                     finish_reason = fr
                 content = delta.get("content")
+                has_tool_delta = bool(delta.get("tool_calls"))
+                if (content or has_tool_delta) and spinner_active:
+                    status.stop()
+                    spinner_active = False
                 if content:
                     full_content += content
                     console.print(content, end="", style="bright_white",
                                   highlight=False, markup=False)
                 _parse_tool_calls_from_chunk(d, accum_tools)
     except httpx.HTTPError as e:
+        if spinner_active:
+            status.stop()
+            spinner_active = False
         console.print(f"\n[red]✗ network error: {e}[/red]")
+    finally:
+        if spinner_active:
+            status.stop()
     if full_content:
         console.print()  # newline after streamed content
 
