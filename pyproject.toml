@@ -1,6 +1,6 @@
 [project]
 name = "lillycoder"
-version = "0.1.1"
+version = "0.1.2"
 description = "Local-first coder REPL with file + shell tools, talks to any OpenAI-compatible /v1 endpoint."
 readme = "README.md"
 requires-python = ">=3.10"

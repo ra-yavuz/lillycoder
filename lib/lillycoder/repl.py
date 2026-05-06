@@ -28,12 +28,16 @@ from .tools.registry import all_tools
 
 SLASH_HELP = """
 slash commands:
-  /help            this message
-  /exit            leave (also: ctrl+d)
-  /clear           reset conversation history this session
-  /compact         (placeholder — autocompact lands in step 7)
-  /tools           list available tools (lands in step 4+)
-  /persona         show the current persona text
+  /help                       this message
+  /exit                       leave (also: ctrl+d)
+  /clear                      reset conversation history this session
+  /compact                    (placeholder - autocompact lands in step 7)
+  /tools                      list available tools (lands in step 4+)
+  /persona                    show the current persona text
+  /personas                   list saved personas
+  /setpersona <name>          switch to a saved persona by name
+  /setpersona -f <path>       load persona text from a file
+  /setpersona <text...>       set persona inline to the given text
 """
 
 
@@ -188,6 +192,52 @@ def run_repl(api_url: Optional[str] = None,
                         continue
                     if cmd == "/persona":
                         console.print(Markdown(f"```\n{system_prompt}\n```"))
+                        continue
+                    if cmd == "/personas":
+                        for n in list_personas():
+                            marker = " [dim](current)[/dim]" if n == persona else ""
+                            console.print(f"  [cyan]{n}[/cyan]{marker}")
+                        continue
+                    if cmd == "/setpersona":
+                        rest = user_input[len("/setpersona"):].strip()
+                        if not rest:
+                            console.print(
+                                "[yellow]usage: /setpersona <name> | -f <path> | <text...>[/yellow]"
+                            )
+                            continue
+                        new_prompt: Optional[str] = None
+                        new_label: str = "custom"
+                        if rest.startswith("-f"):
+                            path_str = rest[2:].strip()
+                            if not path_str:
+                                console.print("[yellow]usage: /setpersona -f <path>[/yellow]")
+                                continue
+                            p = Path(path_str).expanduser()
+                            if not p.is_file():
+                                console.print(f"[red]✗ no such file: {p}[/red]")
+                                continue
+                            try:
+                                new_prompt = p.read_text()
+                            except OSError as e:
+                                console.print(f"[red]✗ read failed: {e}[/red]")
+                                continue
+                            new_label = f"file:{p}"
+                        elif " " not in rest and rest in list_personas():
+                            new_prompt = load_persona(rest)
+                            new_label = rest
+                        else:
+                            new_prompt = rest
+                        if not new_prompt or not new_prompt.strip():
+                            console.print("[red]✗ empty persona, ignored[/red]")
+                            continue
+                        system_prompt = new_prompt
+                        persona = new_label
+                        if messages and messages[0].get("role") == "system":
+                            messages[0]["content"] = system_prompt
+                        else:
+                            messages.insert(0, {"role": "system", "content": system_prompt})
+                        ctx.refresh(messages)
+                        console.print(f"[dim]✓ persona set ({new_label}, {len(system_prompt)} chars)[/dim]")
                         continue
                     if cmd == "/tools":
                         for t in all_tools():

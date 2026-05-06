@@ -1,3 +1,12 @@
+lillycoder (0.1.2-1) unstable; urgency=low
+
+  * REPL: add /setpersona for switching personas mid-session.
+    Three forms: /setpersona <name> (saved persona), /setpersona -f <path>
+    (load from a file), /setpersona <text...> (inline text). Also /personas
+    lists saved personas and marks the active one.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Wed, 06 May 2026 16:30:00 +0000
+
 lillycoder (0.1.1-1) unstable; urgency=low
 
   * Discovery: probe more default LLM server ports out of the box -
