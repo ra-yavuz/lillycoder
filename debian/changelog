@@ -1,0 +1,18 @@
+lillycoder (0.1.0-1) unstable; urgency=low
+
+  * Initial release.
+  * REPL with 11 tools: read_file, list_dir, grep, find, write_file,
+    edit_file, mkdir, mv, rm, bash, pkg_install.
+  * Auto-discovery of local OpenAI-compatible LLM servers on common ports.
+  * Per-tool permission prompts with [y/n/always-tool/always-path] choices,
+    persisted per-project.
+  * Hard-deny safety classifier (sudo, rm -rf /, mkfs, fork bombs, etc.)
+    that cannot be turned off by --bypass-permissions.
+  * Tool-call capability allowlist warns on models without native function
+    calling.
+  * Per-project session history at .lillycoder/history.jsonl.
+  * Auto-compaction of context above 90% of the model window.
+  * Bundled default persona (kid-coder voice); user personas under
+    ~/.config/lillycoder/personas/.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Wed, 06 May 2026 14:50:00 +0000

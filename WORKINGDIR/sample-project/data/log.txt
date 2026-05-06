@@ -1,0 +1,400 @@
+2026-05-06T08:00:05  WARN   auth        retrying
+2026-05-06T08:00:08  INFO   billing     user signed in
+2026-05-06T08:00:14  ERROR  auth        connection refused
+2026-05-06T08:00:21  WARN   api         retrying
+2026-05-06T08:00:32  INFO   billing     user signed in
+2026-05-06T08:00:36  WARN   auth        connection reset
+2026-05-06T08:00:45  ERROR  db          connection refused
+2026-05-06T08:00:51  INFO   api         config reloaded
+2026-05-06T08:00:58  INFO   billing     cache hit
+2026-05-06T08:01:05  INFO   billing     user signed in
+2026-05-06T08:01:10  INFO   auth        cache hit
+2026-05-06T08:01:19  INFO   scheduler   config reloaded
+2026-05-06T08:01:28  INFO   db          cache hit
+2026-05-06T08:01:35  INFO   api         request handled
+2026-05-06T08:01:40  INFO   db          config reloaded
+2026-05-06T08:01:45  WARN   billing     retrying
+2026-05-06T08:01:52  WARN   billing     deprecated endpoint hit
+2026-05-06T08:02:01  INFO   auth        cache hit
+2026-05-06T08:02:07  INFO   db          job dispatched
+2026-05-06T08:02:18  INFO   scheduler   user signed in
+2026-05-06T08:02:24  INFO   db          request handled
+2026-05-06T08:02:32  WARN   billing     connection reset
+2026-05-06T08:02:37  INFO   billing     cache hit
+2026-05-06T08:02:42  INFO   db          config reloaded
+2026-05-06T08:02:49  WARN   scheduler   retrying
+2026-05-06T08:02:57  INFO   scheduler   cache hit
+2026-05-06T08:03:07  INFO   billing     config reloaded
+2026-05-06T08:03:12  INFO   billing     cache hit
+2026-05-06T08:03:18  WARN   api         slow query
+2026-05-06T08:03:27  INFO   billing     config reloaded
+2026-05-06T08:03:33  INFO   db          config reloaded
+2026-05-06T08:03:38  WARN   api         deprecated endpoint hit
+2026-05-06T08:03:44  INFO   worker      cache hit
+2026-05-06T08:03:52  ERROR  auth        unhandled exception
+2026-05-06T08:04:02  WARN   billing     queue backing up
+2026-05-06T08:04:09  INFO   api         cache hit
+2026-05-06T08:04:16  INFO   worker      job dispatched
+2026-05-06T08:04:24  INFO   db          request handled
+2026-05-06T08:04:26  WARN   scheduler   deprecated endpoint hit
+2026-05-06T08:04:36  INFO   api         user signed in
+2026-05-06T08:04:44  INFO   db          job dispatched
+2026-05-06T08:04:47  ERROR  billing     connection refused
+2026-05-06T08:04:58  WARN   scheduler   connection reset
+2026-05-06T08:05:02  INFO   billing     job dispatched
+2026-05-06T08:05:12  WARN   worker      retrying
+2026-05-06T08:05:15  INFO   api         request handled
+2026-05-06T08:05:22  INFO   scheduler   user signed in
+2026-05-06T08:05:29  INFO   worker      request handled
+2026-05-06T08:05:40  ERROR  api         unhandled exception
+2026-05-06T08:05:48  ERROR  billing     timeout
+2026-05-06T08:05:52  INFO   worker      user signed in
+2026-05-06T08:05:58  WARN   worker      queue backing up
+2026-05-06T08:06:09  WARN   db          slow query
+2026-05-06T08:06:14  INFO   api         job dispatched
+2026-05-06T08:06:19  WARN   api         retrying
+2026-05-06T08:06:25  INFO   auth        job dispatched
+2026-05-06T08:06:36  WARN   worker      slow query
+2026-05-06T08:06:44  INFO   auth        request handled
+2026-05-06T08:06:46  WARN   auth        slow query
+2026-05-06T08:06:57  INFO   scheduler   request handled
+2026-05-06T08:07:01  INFO   scheduler   cache hit
+2026-05-06T08:07:11  WARN   billing     connection reset
+2026-05-06T08:07:17  INFO   billing     cache hit
+2026-05-06T08:07:26  INFO   auth        request handled
+2026-05-06T08:07:31  INFO   scheduler   cache hit
+2026-05-06T08:07:40  INFO   db          request handled
+2026-05-06T08:07:42  WARN   db          retrying
+2026-05-06T08:07:49  INFO   db          job dispatched
+2026-05-06T08:08:00  INFO   billing     user signed in
+2026-05-06T08:08:04  INFO   billing     cache hit
+2026-05-06T08:08:10  INFO   api         user signed in
+2026-05-06T08:08:17  INFO   worker      request handled
+2026-05-06T08:08:24  WARN   worker      retrying
+2026-05-06T08:08:34  ERROR  billing     timeout
+2026-05-06T08:08:41  INFO   api         user signed in
+2026-05-06T08:08:45  INFO   billing     cache hit
+2026-05-06T08:08:54  INFO   scheduler   cache hit
+2026-05-06T08:09:04  INFO   db          config reloaded
+2026-05-06T08:09:07  ERROR  api         timeout
+2026-05-06T08:09:17  INFO   billing     request handled
+2026-05-06T08:09:25  ERROR  worker      unhandled exception
+2026-05-06T08:09:31  INFO   auth        request handled
+2026-05-06T08:09:35  INFO   worker      config reloaded
+2026-05-06T08:09:42  INFO   worker      request handled
+2026-05-06T08:09:53  INFO   worker      request handled
+2026-05-06T08:09:59  INFO   api         request handled
+2026-05-06T08:10:02  INFO   worker      config reloaded
+2026-05-06T08:10:14  WARN   auth        queue backing up
+2026-05-06T08:10:18  WARN   worker      connection reset
+2026-05-06T08:10:24  INFO   billing     job dispatched
+2026-05-06T08:10:35  INFO   api         user signed in
+2026-05-06T08:10:39  WARN   scheduler   queue backing up
+2026-05-06T08:10:47  ERROR  auth        unhandled exception
+2026-05-06T08:10:51  WARN   worker      retrying
+2026-05-06T08:11:00  WARN   billing     connection reset
+2026-05-06T08:11:06  INFO   scheduler   request handled
+2026-05-06T08:11:15  INFO   scheduler   user signed in
+2026-05-06T08:11:23  WARN   db          deprecated endpoint hit
+2026-05-06T08:11:31  WARN   worker      retrying
+2026-05-06T08:11:34  WARN   scheduler   retrying
+2026-05-06T08:11:45  INFO   auth        request handled
+2026-05-06T08:11:49  WARN   billing     deprecated endpoint hit
+2026-05-06T08:11:55  WARN   billing     deprecated endpoint hit
+2026-05-06T08:12:05  WARN   db          deprecated endpoint hit
+2026-05-06T08:12:08  INFO   scheduler   request handled
+2026-05-06T08:12:15  WARN   api         deprecated endpoint hit
+2026-05-06T08:12:27  INFO   scheduler   user signed in
+2026-05-06T08:12:33  INFO   billing     cache hit
+2026-05-06T08:12:36  ERROR  api         connection refused
+2026-05-06T08:12:47  INFO   auth        user signed in
+2026-05-06T08:12:54  INFO   scheduler   config reloaded
+2026-05-06T08:12:57  INFO   api         user signed in
+2026-05-06T08:13:06  INFO   scheduler   request handled
+2026-05-06T08:13:16  INFO   db          user signed in
+2026-05-06T08:13:21  INFO   scheduler   config reloaded
+2026-05-06T08:13:26  WARN   db          slow query
+2026-05-06T08:13:32  INFO   billing     cache hit
+2026-05-06T08:13:42  INFO   db          job dispatched
+2026-05-06T08:13:48  WARN   db          slow query
+2026-05-06T08:13:56  INFO   db          request handled
+2026-05-06T08:14:01  INFO   api         user signed in
+2026-05-06T08:14:08  INFO   scheduler   job dispatched
+2026-05-06T08:14:17  INFO   auth        user signed in
+2026-05-06T08:14:23  INFO   scheduler   request handled
+2026-05-06T08:14:31  INFO   db          config reloaded
+2026-05-06T08:14:35  WARN   worker      deprecated endpoint hit
+2026-05-06T08:14:46  INFO   scheduler   user signed in
+2026-05-06T08:14:53  INFO   auth        request handled
+2026-05-06T08:14:59  INFO   scheduler   job dispatched
+2026-05-06T08:15:06  WARN   worker      retrying
+2026-05-06T08:15:10  WARN   billing     deprecated endpoint hit
+2026-05-06T08:15:21  ERROR  api         unhandled exception
+2026-05-06T08:15:26  WARN   db          slow query
+2026-05-06T08:15:35  INFO   auth        job dispatched
+2026-05-06T08:15:43  INFO   db          request handled
+2026-05-06T08:15:50  INFO   worker      job dispatched
+2026-05-06T08:15:57  INFO   scheduler   cache hit
+2026-05-06T08:16:00  INFO   worker      user signed in
+2026-05-06T08:16:11  INFO   db          cache hit
+2026-05-06T08:16:17  ERROR  billing     connection refused
+2026-05-06T08:16:20  INFO   api         config reloaded
+2026-05-06T08:16:30  INFO   scheduler   user signed in
+2026-05-06T08:16:37  WARN   worker      deprecated endpoint hit
+2026-05-06T08:16:45  INFO   api         user signed in
+2026-05-06T08:16:53  INFO   db          user signed in
+2026-05-06T08:17:00  INFO   scheduler   config reloaded
+2026-05-06T08:17:02  WARN   worker      deprecated endpoint hit
+2026-05-06T08:17:10  ERROR  billing     permission denied
+2026-05-06T08:17:16  INFO   billing     request handled
+2026-05-06T08:17:23  INFO   api         config reloaded
+2026-05-06T08:17:31  INFO   api         config reloaded
+2026-05-06T08:17:40  ERROR  db          out of memory
+2026-05-06T08:17:49  INFO   billing     user signed in
+2026-05-06T08:17:54  WARN   auth        retrying
+2026-05-06T08:18:01  INFO   billing     config reloaded
+2026-05-06T08:18:05  INFO   worker      user signed in
+2026-05-06T08:18:17  INFO   billing     cache hit
+2026-05-06T08:18:21  WARN   worker      connection reset
+2026-05-06T08:18:31  ERROR  api         connection refused
+2026-05-06T08:18:36  INFO   api         config reloaded
+2026-05-06T08:18:43  INFO   db          cache hit
+2026-05-06T08:18:51  INFO   billing     job dispatched
+2026-05-06T08:18:56  INFO   db          user signed in
+2026-05-06T08:19:02  INFO   auth        job dispatched
+2026-05-06T08:19:12  INFO   scheduler   job dispatched
+2026-05-06T08:19:16  INFO   billing     user signed in
+2026-05-06T08:19:27  INFO   db          user signed in
+2026-05-06T08:19:32  INFO   auth        cache hit
+2026-05-06T08:19:39  INFO   worker      cache hit
+2026-05-06T08:19:46  INFO   billing     cache hit
+2026-05-06T08:19:54  ERROR  worker      unhandled exception
+2026-05-06T08:19:59  INFO   api         request handled
+2026-05-06T08:20:08  INFO   api         cache hit
+2026-05-06T08:20:15  ERROR  db          connection refused
+2026-05-06T08:20:20  INFO   api         user signed in
+2026-05-06T08:20:28  INFO   api         request handled
+2026-05-06T08:20:37  INFO   db          cache hit
+2026-05-06T08:20:43  INFO   api         user signed in
+2026-05-06T08:20:50  WARN   auth        queue backing up
+2026-05-06T08:20:53  WARN   db          retrying
+2026-05-06T08:21:03  WARN   api         slow query
+2026-05-06T08:21:10  INFO   auth        job dispatched
+2026-05-06T08:21:16  INFO   billing     cache hit
+2026-05-06T08:21:24  INFO   api         job dispatched
+2026-05-06T08:21:28  INFO   auth        cache hit
+2026-05-06T08:21:37  ERROR  worker      unhandled exception
+2026-05-06T08:21:47  INFO   db          request handled
+2026-05-06T08:21:50  INFO   auth        user signed in
+2026-05-06T08:21:57  INFO   worker      user signed in
+2026-05-06T08:22:07  INFO   api         request handled
+2026-05-06T08:22:12  INFO   api         job dispatched
+2026-05-06T08:22:22  INFO   worker      config reloaded
+2026-05-06T08:22:26  ERROR  auth        timeout
+2026-05-06T08:22:33  INFO   worker      request handled
+2026-05-06T08:22:41  WARN   db          queue backing up
+2026-05-06T08:22:49  ERROR  billing     unhandled exception
+2026-05-06T08:22:52  WARN   db          slow query
+2026-05-06T08:22:59  WARN   scheduler   connection reset
+2026-05-06T08:23:10  WARN   auth        deprecated endpoint hit
+2026-05-06T08:23:13  INFO   db          job dispatched
+2026-05-06T08:23:20  INFO   db          job dispatched
+2026-05-06T08:23:30  INFO   api         request handled
+2026-05-06T08:23:39  INFO   db          cache hit
+2026-05-06T08:23:46  INFO   api         user signed in
+2026-05-06T08:23:52  WARN   db          deprecated endpoint hit
+2026-05-06T08:23:58  WARN   api         queue backing up
+2026-05-06T08:24:04  ERROR  worker      permission denied
+2026-05-06T08:24:12  INFO   auth        job dispatched
+2026-05-06T08:24:20  INFO   api         config reloaded
+2026-05-06T08:24:23  WARN   api         deprecated endpoint hit
+2026-05-06T08:24:33  INFO   scheduler   user signed in
+2026-05-06T08:24:39  INFO   scheduler   job dispatched
+2026-05-06T08:24:48  INFO   worker      job dispatched
+2026-05-06T08:24:51  INFO   worker      user signed in
+2026-05-06T08:25:01  INFO   db          cache hit
+2026-05-06T08:25:10  WARN   billing     queue backing up
+2026-05-06T08:25:12  ERROR  api         out of memory
+2026-05-06T08:25:22  INFO   scheduler   user signed in
+2026-05-06T08:25:31  WARN   billing     deprecated endpoint hit
+2026-05-06T08:25:37  WARN   scheduler   queue backing up
+2026-05-06T08:25:45  WARN   scheduler   queue backing up
+2026-05-06T08:25:52  WARN   scheduler   deprecated endpoint hit
+2026-05-06T08:25:56  INFO   scheduler   job dispatched
+2026-05-06T08:26:03  INFO   auth        user signed in
+2026-05-06T08:26:13  INFO   db          config reloaded
+2026-05-06T08:26:20  INFO   billing     user signed in
+2026-05-06T08:26:26  INFO   scheduler   config reloaded
+2026-05-06T08:26:30  WARN   scheduler   retrying
+2026-05-06T08:26:37  INFO   billing     job dispatched
+2026-05-06T08:26:44  INFO   auth        config reloaded
+2026-05-06T08:26:54  INFO   auth        request handled
+2026-05-06T08:27:02  INFO   db          user signed in
+2026-05-06T08:27:04  ERROR  api         unhandled exception
+2026-05-06T08:27:14  WARN   scheduler   queue backing up
+2026-05-06T08:27:18  INFO   scheduler   user signed in
+2026-05-06T08:27:25  INFO   api         request handled
+2026-05-06T08:27:36  INFO   api         request handled
+2026-05-06T08:27:40  WARN   db          retrying
+2026-05-06T08:27:46  INFO   worker      job dispatched
+2026-05-06T08:27:56  INFO   auth        config reloaded
+2026-05-06T08:28:01  WARN   worker      connection reset
+2026-05-06T08:28:10  ERROR  worker      out of memory
+2026-05-06T08:28:17  INFO   scheduler   config reloaded
+2026-05-06T08:28:21  INFO   worker      config reloaded
+2026-05-06T08:28:29  WARN   db          retrying
+2026-05-06T08:28:40  WARN   billing     deprecated endpoint hit
+2026-05-06T08:28:43  INFO   billing     user signed in
+2026-05-06T08:28:49  WARN   auth        slow query
+2026-05-06T08:28:59  INFO   api         config reloaded
+2026-05-06T08:29:05  INFO   auth        user signed in
+2026-05-06T08:29:10  ERROR  scheduler   out of memory
+2026-05-06T08:29:22  WARN   billing     deprecated endpoint hit
+2026-05-06T08:29:27  WARN   db          slow query
+2026-05-06T08:29:36  INFO   worker      user signed in
+2026-05-06T08:29:38  INFO   scheduler   user signed in
+2026-05-06T08:29:49  INFO   billing     job dispatched
+2026-05-06T08:29:55  ERROR  worker      permission denied
+2026-05-06T08:30:04  INFO   api         job dispatched
+2026-05-06T08:30:10  INFO   scheduler   config reloaded
+2026-05-06T08:30:17  INFO   api         request handled
+2026-05-06T08:30:24  INFO   api         job dispatched
+2026-05-06T08:30:28  INFO   auth        request handled
+2026-05-06T08:30:34  WARN   worker      connection reset
+2026-05-06T08:30:45  ERROR  db          permission denied
+2026-05-06T08:30:52  INFO   billing     cache hit
+2026-05-06T08:30:56  WARN   api         deprecated endpoint hit
+2026-05-06T08:31:02  WARN   api         queue backing up
+2026-05-06T08:31:11  INFO   scheduler   cache hit
+2026-05-06T08:31:17  INFO   db          request handled
+2026-05-06T08:31:25  INFO   api         cache hit
+2026-05-06T08:31:30  WARN   api         connection reset
+2026-05-06T08:31:39  INFO   auth        job dispatched
+2026-05-06T08:31:48  INFO   auth        cache hit
+2026-05-06T08:31:54  INFO   db          config reloaded
+2026-05-06T08:32:02  INFO   auth        user signed in
+2026-05-06T08:32:10  INFO   worker      cache hit
+2026-05-06T08:32:14  INFO   auth        user signed in
+2026-05-06T08:32:22  WARN   billing     deprecated endpoint hit
+2026-05-06T08:32:26  WARN   api         retrying
+2026-05-06T08:32:38  WARN   worker      slow query
+2026-05-06T08:32:40  INFO   scheduler   config reloaded
+2026-05-06T08:32:48  WARN   api         retrying
+2026-05-06T08:32:59  INFO   api         request handled
+2026-05-06T08:33:05  INFO   api         job dispatched
+2026-05-06T08:33:11  ERROR  scheduler   out of memory
+2026-05-06T08:33:19  INFO   billing     cache hit
+2026-05-06T08:33:26  INFO   api         user signed in
+2026-05-06T08:33:29  WARN   db          slow query
+2026-05-06T08:33:40  INFO   api         job dispatched
+2026-05-06T08:33:48  INFO   auth        job dispatched
+2026-05-06T08:33:55  INFO   worker      config reloaded
+2026-05-06T08:34:01  INFO   billing     cache hit
+2026-05-06T08:34:08  INFO   scheduler   job dispatched
+2026-05-06T08:34:14  ERROR  worker      out of memory
+2026-05-06T08:34:22  INFO   billing     user signed in
+2026-05-06T08:34:25  INFO   billing     cache hit
+2026-05-06T08:34:37  INFO   db          cache hit
+2026-05-06T08:34:42  INFO   api         user signed in
+2026-05-06T08:34:50  INFO   billing     config reloaded
+2026-05-06T08:34:53  INFO   auth        cache hit
+2026-05-06T08:35:05  WARN   api         retrying
+2026-05-06T08:35:07  INFO   api         user signed in
+2026-05-06T08:35:18  INFO   scheduler   job dispatched
+2026-05-06T08:35:23  WARN   api         retrying
+2026-05-06T08:35:30  WARN   worker      queue backing up
+2026-05-06T08:35:39  WARN   db          queue backing up
+2026-05-06T08:35:43  INFO   worker      request handled
+2026-05-06T08:35:50  WARN   db          deprecated endpoint hit
+2026-05-06T08:35:56  ERROR  auth        out of memory
+2026-05-06T08:36:06  ERROR  db          unhandled exception
+2026-05-06T08:36:10  INFO   db          job dispatched
+2026-05-06T08:36:19  INFO   scheduler   request handled
+2026-05-06T08:36:25  INFO   scheduler   cache hit
+2026-05-06T08:36:35  INFO   worker      cache hit
+2026-05-06T08:36:39  WARN   billing     slow query
+2026-05-06T08:36:49  INFO   worker      cache hit
+2026-05-06T08:36:56  WARN   billing     queue backing up
+2026-05-06T08:37:04  INFO   billing     cache hit
+2026-05-06T08:37:11  INFO   api         job dispatched
+2026-05-06T08:37:18  INFO   api         job dispatched
+2026-05-06T08:37:23  WARN   billing     retrying
+2026-05-06T08:37:32  INFO   worker      job dispatched
+2026-05-06T08:37:37  INFO   db          job dispatched
+2026-05-06T08:37:44  INFO   billing     cache hit
+2026-05-06T08:37:52  INFO   billing     cache hit
+2026-05-06T08:38:00  INFO   worker      job dispatched
+2026-05-06T08:38:04  INFO   auth        cache hit
+2026-05-06T08:38:13  INFO   worker      request handled
+2026-05-06T08:38:17  ERROR  api         permission denied
+2026-05-06T08:38:28  WARN   scheduler   slow query
+2026-05-06T08:38:35  INFO   worker      job dispatched
+2026-05-06T08:38:42  ERROR  db          timeout
+2026-05-06T08:38:46  INFO   db          request handled
+2026-05-06T08:38:53  INFO   auth        config reloaded
+2026-05-06T08:39:00  ERROR  billing     unhandled exception
+2026-05-06T08:39:06  INFO   db          cache hit
+2026-05-06T08:39:14  INFO   billing     config reloaded
+2026-05-06T08:39:20  WARN   worker      deprecated endpoint hit
+2026-05-06T08:39:31  INFO   api         job dispatched
+2026-05-06T08:39:33  INFO   auth        cache hit
+2026-05-06T08:39:44  INFO   billing     cache hit
+2026-05-06T08:39:47  INFO   auth        cache hit
+2026-05-06T08:39:57  INFO   worker      request handled
+2026-05-06T08:40:05  INFO   db          job dispatched
+2026-05-06T08:40:08  INFO   db          job dispatched
+2026-05-06T08:40:15  WARN   billing     queue backing up
+2026-05-06T08:40:26  WARN   worker      deprecated endpoint hit
+2026-05-06T08:40:34  INFO   db          request handled
+2026-05-06T08:40:41  INFO   db          job dispatched
+2026-05-06T08:40:43  INFO   auth        user signed in
+2026-05-06T08:40:50  INFO   scheduler   cache hit
+2026-05-06T08:40:58  INFO   billing     config reloaded
+2026-05-06T08:41:09  INFO   api         job dispatched
+2026-05-06T08:41:14  ERROR  db          connection refused
+2026-05-06T08:41:21  WARN   db          slow query
+2026-05-06T08:41:29  WARN   auth        queue backing up
+2026-05-06T08:41:37  INFO   scheduler   request handled
+2026-05-06T08:41:42  INFO   billing     cache hit
+2026-05-06T08:41:51  INFO   scheduler   request handled
+2026-05-06T08:41:53  INFO   worker      job dispatched
+2026-05-06T08:42:00  INFO   scheduler   user signed in
+2026-05-06T08:42:12  INFO   auth        user signed in
+2026-05-06T08:42:14  WARN   worker      retrying
+2026-05-06T08:42:25  INFO   billing     user signed in
+2026-05-06T08:42:29  INFO   auth        config reloaded
+2026-05-06T08:42:37  WARN   billing     slow query
+2026-05-06T08:42:42  ERROR  billing     connection refused
+2026-05-06T08:42:53  INFO   billing     user signed in
+2026-05-06T08:43:01  INFO   billing     request handled
+2026-05-06T08:43:05  INFO   billing     request handled
+2026-05-06T08:43:10  INFO   worker      job dispatched
+2026-05-06T08:43:18  INFO   scheduler   request handled
+2026-05-06T08:43:24  ERROR  api         connection refused
+2026-05-06T08:43:34  ERROR  auth        out of memory
+2026-05-06T08:43:42  ERROR  scheduler   connection refused
+2026-05-06T08:43:46  INFO   api         config reloaded
+2026-05-06T08:43:54  WARN   auth        connection reset
+2026-05-06T08:43:59  INFO   db          request handled
+2026-05-06T08:44:11  INFO   api         cache hit
+2026-05-06T08:44:13  INFO   api         cache hit
+2026-05-06T08:44:21  INFO   scheduler   config reloaded
+2026-05-06T08:44:31  INFO   billing     job dispatched
+2026-05-06T08:44:39  WARN   worker      connection reset
+2026-05-06T08:44:45  INFO   api         config reloaded
+2026-05-06T08:44:52  INFO   api         config reloaded
+2026-05-06T08:45:00  INFO   auth        request handled
+2026-05-06T08:45:05  WARN   worker      slow query
+2026-05-06T08:45:11  INFO   billing     cache hit
+2026-05-06T08:45:21  INFO   api         cache hit
+2026-05-06T08:45:25  INFO   scheduler   cache hit
+2026-05-06T08:45:31  WARN   scheduler   deprecated endpoint hit
+2026-05-06T08:45:37  WARN   api         retrying
+2026-05-06T08:45:44  INFO   auth        cache hit
+2026-05-06T08:45:52  ERROR  db          permission denied
+2026-05-06T08:46:02  WARN   auth        connection reset
+2026-05-06T08:46:08  WARN   scheduler   retrying
+2026-05-06T08:46:17  INFO   db          cache hit
+2026-05-06T08:46:21  INFO   scheduler   config reloaded
+2026-05-06T08:46:30  INFO   auth        config reloaded
+2026-05-06T08:46:34  INFO   billing     cache hit

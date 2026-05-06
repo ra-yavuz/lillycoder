@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Thin shim. Real entry point lives in lib/lillycoder/__main__.py.
+
+Two install paths supported:
+  - apt (.deb):   /usr/lib/lillycoder/ on PYTHONPATH via the postinst-managed
+                  /usr/lib/python3/dist-packages link OR via this shim's sys.path.
+  - pip install:  pyproject.toml registers `lillycoder` directly.
+
+The shim version handles the apt path: it locates the lib dir relative to
+itself (binary is /usr/bin/lillycoder, lib is /usr/lib/lillycoder/) and
+prepends it to sys.path before importing.
+"""
+import os
+import sys
+from pathlib import Path
+
+# Resolve the on-disk lib path. Two layouts:
+#   /usr/bin/lillycoder        + /usr/lib/lillycoder/lillycoder/
+#   <repo>/bin/lillycoder      + <repo>/lib/lillycoder/
+_self = Path(__file__).resolve()
+for candidate in (
+    _self.parent.parent / "lib",          # repo layout
+    Path("/usr/lib/lillycoder"),          # installed layout
+):
+    if (candidate / "lillycoder" / "__main__.py").exists():
+        sys.path.insert(0, str(candidate))
+        break
+
+from lillycoder.__main__ import main
+if __name__ == "__main__":
+    sys.exit(main())

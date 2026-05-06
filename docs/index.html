@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>lillycoder: a local-first coder REPL with file and shell tools</title>
+<meta name="description" content="lillycoder is a small open-source CLI by Ramazan Yavuz: a chat REPL that lets a local LLM read, write, and edit files, run shell commands, install packages. Talks to any OpenAI-compatible /v1 endpoint (llama.cpp, ollama, LM Studio). No cloud, no telemetry.">
+<meta name="author" content="Ramazan Yavuz">
+<meta name="keywords" content="lillycoder, local llm coder, claude code alternative, open source coding assistant, ollama coder, llama.cpp coder, local repl tool, openai compatible cli">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://ra-yavuz.github.io/lillycoder/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="lillycoder: a local-first coder REPL">
+<meta property="og:description" content="A chat REPL that lets a local LLM read, write, edit files and run shell commands. Talks to any OpenAI-compatible /v1 endpoint.">
+<meta property="og:url" content="https://ra-yavuz.github.io/lillycoder/">
+<meta property="og:site_name" content="ra-yavuz">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="lillycoder: a local-first coder REPL">
+<meta name="twitter:description" content="A chat REPL that lets a local LLM read, write, edit files and run shell commands.">
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --muted: #5e5e5e;
+    --bg: #f4f1ec;
+    --card: #ffffff;
+    --line: #d8d4cc;
+    --code-bg: #ebe7e0;
+    --link: #0a4ca8;
+    --apt-bg: #eef2f8;
+    --warn-bg: #fff7d6;
+    --warn-fg: #5a4500;
+    --warn-line: #e8d36b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #ececec;
+      --muted: #9a9a9a;
+      --bg: #1c1d20;
+      --card: #25272b;
+      --line: #353941;
+      --code-bg: #14151a;
+      --link: #7cb0ff;
+      --apt-bg: #1f242d;
+      --warn-bg: #3a2e00;
+      --warn-fg: #f6e2a4;
+      --warn-line: #6a5500;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--fg); background: var(--bg);
+    line-height: 1.55;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 24px 96px; }
+  .crumb { font-size: 0.86rem; color: var(--muted); margin: 0 0 18px; }
+  h1 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.7rem; margin: 0 0 6px; letter-spacing: -0.005em; }
+  p.tag { color: var(--muted); margin: 0 0 18px; font-size: 1rem; max-width: 60ch; }
+  h2 {
+    font-size: 1rem; margin: 36px 0 10px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+  }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    background: var(--code-bg); padding: 1px 5px; border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.9em;
+  }
+  pre {
+    background: var(--code-bg); padding: 12px 14px; border-radius: 6px;
+    border: 1px solid var(--line); overflow-x: auto;
+    font-size: 0.86rem; line-height: 1.55; margin: 0;
+  }
+  pre code { background: transparent; padding: 0; }
+  .links-row a { margin-right: 14px; font-size: 0.95rem; }
+  .apt-section {
+    background: var(--apt-bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 16px 18px;
+  }
+  .apt-section h2 { margin-top: 0; }
+  .warn {
+    background: var(--warn-bg); color: var(--warn-fg);
+    border-left: 4px solid var(--warn-line);
+    padding: 12px 16px; border-radius: 4px;
+    font-size: 0.9rem; margin: 12px 0 0;
+  }
+  table.matrix { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+  table.matrix th, table.matrix td {
+    text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  table.matrix th { color: var(--muted); font-weight: 600; }
+  footer {
+    margin-top: 56px; color: var(--muted); font-size: 0.85rem;
+    border-top: 1px solid var(--line); padding-top: 14px;
+  }
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "lillycoder",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Linux",
+  "description": "A chat REPL that lets a local LLM read, write, and edit files, run shell commands, and install packages in the current folder. Talks to any OpenAI-compatible /v1 endpoint.",
+  "url": "https://ra-yavuz.github.io/lillycoder/",
+  "downloadUrl": "https://github.com/ra-yavuz/lillycoder/releases",
+  "softwareVersion": "0.1.0",
+  "license": "https://opensource.org/licenses/MIT",
+  "author": {
+    "@type": "Person",
+    "name": "Ramazan Yavuz",
+    "url": "https://ra-yavuz.github.io/"
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  }
+}
+</script>
+</head>
+<body>
+<main>
+  <p class="crumb">
+    <a href="https://ra-yavuz.github.io/">ra-yavuz</a> &rsaquo; lillycoder
+  </p>
+
+  <h1>lillycoder</h1>
+  <p class="tag">
+    A small CLI that drops you into a chat REPL inside any folder. The model on
+    the other end can read, write, and edit your files, run shell commands,
+    and install packages, all gated by a per-tool permission prompt. Talks to
+    any local OpenAI-compatible <code>/v1</code> endpoint.
+  </p>
+
+  <div class="links-row">
+    <a href="https://github.com/ra-yavuz/lillycoder">source</a>
+    <a href="https://github.com/ra-yavuz/lillycoder/releases">releases</a>
+    <a href="#install">install</a>
+    <a href="https://github.com/ra-yavuz/lillycoder/issues">issues</a>
+  </div>
+
+  <h2>What it is</h2>
+  <p>
+    A 10-file Python package plus a CLI shim. You run <code>lillycoder</code>
+    in a project directory and start typing. The model picks tools from a
+    fixed set (<code>read_file</code>, <code>write_file</code>,
+    <code>edit_file</code>, <code>bash</code>, <code>mkdir</code>,
+    <code>mv</code>, <code>rm</code>, <code>grep</code>, <code>find</code>,
+    <code>list_dir</code>, <code>pkg_install</code>) to do what you asked.
+  </p>
+  <p>
+    Every mutating action prompts:
+  </p>
+  <pre><code>🦊 lilly wants to: write_file("src/index.js", 142 chars)
+   [y]es  [n]o  [a]lways for this tool  [p]ath: always for this exact target
+   ></code></pre>
+
+  <h2>What it is not</h2>
+  <p>
+    lillycoder does not start LLM servers, manage Docker, or ship a model.
+    It expects a server already running on localhost (llama.cpp, ollama, LM
+    Studio, etc.). On first run it scans common ports and offers to use
+    whatever it finds, or you pass <code>--api</code>.
+  </p>
+
+  <h2 id="install">Install</h2>
+
+  <div class="apt-section">
+    <h2>Debian / Ubuntu apt</h2>
+<pre><code>sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://ra-yavuz.github.io/apt/pubkey.gpg \
+  | sudo tee /etc/apt/keyrings/ra-yavuz.gpg &gt;/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/ra-yavuz.gpg] https://ra-yavuz.github.io/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/ra-yavuz.list
+sudo apt update
+sudo apt install lillycoder</code></pre>
+  </div>
+
+  <h2>From source (any Linux)</h2>
+<pre><code>git clone https://github.com/ra-yavuz/lillycoder.git
+cd lillycoder
+pip install --user -e .</code></pre>
+
+  <h2>Quick start</h2>
+  <p>
+    Have an LLM server running somewhere on localhost. Then in any project:
+  </p>
+<pre><code>cd ~/myproject
+lillycoder</code></pre>
+<pre><code>🦊 scanning localhost for LLM servers...
+🦊 found 1 endpoint: http://localhost:11434/v1 (ollama, 3 models)
+   use it? [Y/n] y
+✓ ollama · qwen2.5-coder:7b
+🦊 lilly is awake · qwen2.5-coder:7b · /home/you/myproject  ·  11 tools
+   type a message · /help for commands · /exit to leave
+[ctx 1.2k/8k·15%] › what files are in this folder?</code></pre>
+
+  <h2>Compatible servers</h2>
+  <table class="matrix">
+    <tr><th>Server</th><th>Default port</th><th>Notes</th></tr>
+    <tr><td>llama.cpp <code>llama-server</code></td><td>8080</td><td>OpenAI <code>/v1</code> shape native</td></tr>
+    <tr><td>ollama</td><td>11434</td><td>OpenAI surface at <code>/v1</code></td></tr>
+    <tr><td>LM Studio</td><td>1234</td><td>built-in local server</td></tr>
+    <tr><td>any other</td><td>any</td><td><code>--api http://your.url/v1</code></td></tr>
+  </table>
+  <p>
+    The model on the other end matters. Tool-calling reliability needs a
+    model trained for it. lillycoder warns when the chosen model is not in
+    its known-tool-capable allowlist (Qwen 2.5+, Qwen 3, Gemma 3+, Llama
+    3.1+, Mistral Small 3, Dolphin 3 R1). Pass <code>--force</code> to
+    silence.
+  </p>
+
+  <h2>Safety</h2>
+  <p>
+    Hard-banned commands cannot be turned off by <code>--bypass-permissions</code>:
+    <code>sudo</code>, <code>rm -rf /</code>, <code>rm -rf ~</code>,
+    <code>mkfs</code>, <code>dd of=/dev/*</code>, recursive
+    <code>chmod</code> / <code>chown</code> of <code>/</code> or
+    <code>~</code>, fork bombs. They are refused at the safety classifier
+    before exec. Writes outside the working directory are also blocked
+    by default; widen with <code>LILLY_ALLOW_OUTSIDE_CWD=1</code> if you
+    really mean it.
+  </p>
+
+  <div class="warn">
+    <strong>Disclaimer:</strong> lillycoder is provided AS IS, WITHOUT
+    WARRANTY OF ANY KIND. The LLM can read, write, and delete files in
+    the current working directory and run shell commands on your behalf.
+    LLMs hallucinate; they may invent file paths or write incorrect
+    commands. <strong>You alone are responsible for any damage to your
+    data, hardware, or system.</strong> By installing or running this
+    software you accept full risk. See
+    <a href="https://github.com/ra-yavuz/lillycoder/blob/main/README.md#disclaimer--no-warranty">README</a>
+    for the full text.
+  </div>
+
+  <footer>
+    <p>
+      lillycoder is open source software by
+      <a href="https://ramazan-yavuz.tr">Ramazan Yavuz</a>, MIT licensed.
+      Source on <a href="https://github.com/ra-yavuz/lillycoder">GitHub</a>.
+    </p>
+  </footer>
+</main>
+</body>
+</html>

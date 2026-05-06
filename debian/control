@@ -1,0 +1,41 @@
+Source: lillycoder
+Section: utils
+Priority: optional
+Maintainer: Ramazan Yavuz <yavuzramazan1994@gmail.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Homepage: https://github.com/ra-yavuz/lillycoder
+Vcs-Git: https://github.com/ra-yavuz/lillycoder.git
+Vcs-Browser: https://github.com/ra-yavuz/lillycoder
+Rules-Requires-Root: no
+
+Package: lillycoder
+Architecture: all
+Depends: ${misc:Depends},
+ python3 (>= 3.10),
+ python3-httpx,
+ python3-prompt-toolkit,
+ python3-rich,
+ python3-pydantic
+Recommends: ripgrep
+Suggests: nodejs, npm
+Description: local-first coder REPL with file and shell tools
+ lillycoder drops you into a chat REPL inside any folder. The model on the
+ other end can read, write, and edit files, run shell commands, install
+ packages, and grep your project. It talks to any OpenAI-compatible /v1
+ endpoint, so you pair it with whichever local LLM server you already use
+ (llama.cpp, ollama, LM Studio, etc.). No cloud, no API key, no telemetry.
+ .
+ Every mutating action is gated by a per-tool permission prompt. The hard
+ deny list (sudo, rm -rf /, mkfs, fork bombs, recursive chmod of /) cannot
+ be bypassed by the permission flag and is enforced by an upfront safety
+ classifier.
+ .
+ lillycoder does not start LLM servers, manage Docker, or ship a model. It
+ expects a server already running, scans common ports on first run
+ (11434, 8080, 1234, 18080, 8201), and offers to use whatever it finds.
+ .
+ DISCLAIMER: provided AS IS, no warranty. The LLM can read, write, and
+ delete files in the current working directory and run shell commands.
+ You alone are responsible for any damage. By installing you accept full
+ risk. See /usr/share/doc/lillycoder/README.md for the full disclaimer.

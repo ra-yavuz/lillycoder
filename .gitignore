@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Project state (per-project, not source)
+.lillycoder/
+WORKINGDIR/scratch/
+WORKINGDIR/*/.lillycoder/
+
+# Models are big, never committed
+models/
+*.gguf
+*.safetensors
+
+# Debian build artefacts
+*.deb
+*.buildinfo
+*.changes
+*.dsc
+*.tar.*
+debian/.debhelper/
+debian/files
+debian/lillycoder/
+debian/lillycoder.substvars
+debian/debhelper-build-stamp
+build/
+dist/
+
+# Editor / OS
+*~
+*.swp
+.DS_Store
+.idea/
+.vscode/

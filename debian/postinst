@@ -1,0 +1,22 @@
+#!/bin/sh
+# postinst for lillycoder
+set -e
+
+case "$1" in
+    configure)
+        # Make the python deps importable for the system python.
+        # The .deb installs the lib to /usr/lib/lillycoder/lillycoder/;
+        # the bin shim already adds that to sys.path. Nothing to do here
+        # unless we ever decide to byte-compile.
+        :
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        :
+        ;;
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

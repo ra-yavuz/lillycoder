@@ -1,0 +1,58 @@
+# lillycoder dev sandbox.
+#
+# Quick start (from this folder):
+#
+#   docker compose up -d
+#   docker compose exec lillycoder bash
+#
+# That drops you into /workspace inside the container, with lillycoder
+# installed in editable mode (so any edit to lib/lillycoder/ on the host
+# is live inside). Run:
+#
+#   lillycoder --api http://host.docker.internal:11434/v1
+#
+# (or whatever port your local LLM server is on). The container has
+# host.docker.internal pointing at your host's gateway by default on
+# Docker Desktop; on Linux Docker Engine, the line below adds it
+# explicitly.
+#
+# Files you create from inside (in /workspace) appear under
+# ./WORKINGDIR/ on the host. If lillycoder goes haywire, damage stays
+# in WORKINGDIR/.
+
+services:
+  lillycoder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lillycoder:dev
+    volumes:
+      # Source: hot-reloaded
+      - .:/opt/lillycoder
+      # Working area: drop test files here from the host
+      - ./WORKINGDIR:/workspace
+      # Persistent config across runs
+      - ${HOME}/.config/lillycoder:/root/.config/lillycoder
+    environment:
+      # If you also use the parent ai-on-device project's models, you can
+      # point your LLM server at them. Lillycoder itself does not need
+      # access to model files.
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    extra_hosts:
+      # Lets you talk to the host's LLM server (e.g. ollama on the host)
+      # from inside the container on Linux Docker Engine.
+      - "host.docker.internal:host-gateway"
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    entrypoint:
+      - bash
+      - -c
+      - |
+        pip install --quiet -e /opt/lillycoder
+        echo "🦊 lillycoder dev sandbox"
+        echo "   /workspace is your scratch (mounted from ./WORKINGDIR on host)"
+        echo "   point lillycoder at a host LLM server, e.g.:"
+        echo "     lillycoder --api http://host.docker.internal:11434/v1"
+        exec bash
