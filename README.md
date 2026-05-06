@@ -41,7 +41,25 @@ The hard-deny safety list runs on top of that and cannot be turned off by the pe
 
 ## Install
 
-### From the apt repo (Debian / Ubuntu)
+### One-liner (Debian / Ubuntu)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ra-yavuz/lillycoder/main/scripts/get.sh | sudo bash
+```
+
+This adds the `ra-yavuz` apt repository (signing key + sources list), then `apt install lillycoder`. Re-running it is safe.
+
+If you would rather read the script first (recommended for any `curl | bash`):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ra-yavuz/lillycoder/main/scripts/get.sh -o get.sh
+less get.sh
+sudo bash get.sh
+```
+
+### Manual apt steps (Debian / Ubuntu)
+
+If you prefer to wire up the apt repo by hand:
 
 ```sh
 sudo install -d -m 0755 /etc/apt/keyrings
