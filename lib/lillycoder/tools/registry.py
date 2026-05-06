@@ -57,4 +57,4 @@ def schemas_for_model() -> list[dict]:
 
 # --- import side effect: register every built-in tool ----------------------
 
-from . import read, ls, grep, find, write, edit, bash, mkdir, mv, rm, pkg  # noqa
+from . import read, ls, grep, find, write, edit, bash, mkdir, mv, rm, pkg, persona  # noqa

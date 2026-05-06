@@ -23,10 +23,11 @@ import time
 
 from .agent import run_turn
 from . import config as _config
-from .config import load_persona, list_personas
+from .config import load_persona, list_personas, PERSONAS_DIR
 from .context import ContextTracker
 from .endpoint import acquire, ModelInfo
 from .tools.registry import all_tools
+from .tools import persona as persona_tool
 
 
 SLASH_HELP = """
@@ -43,6 +44,7 @@ slash commands:
   /setpersona <text...>       set persona inline to the given text
   /thoughts [on|off]          toggle showing the model's <think> tokens
   /autocompact [on|off]       toggle automatic compaction at 90% context
+  /persona-evolve [on|off]    let lilly persist persona changes to disk
 """
 
 # Window in which a second Ctrl+C is interpreted as "yes, really exit".
@@ -127,7 +129,8 @@ def run_repl(api_url: Optional[str] = None,
              persona: str = "default",
              force: bool = False,
              bypass_perms: bool = False,
-             no_autocompact: bool = False) -> int:
+             no_autocompact: bool = False,
+             persona_evolve: bool = False) -> int:
     """Main entry. Resolves an endpoint (auto-discover, --api, or saved),
     then loops on user input until /exit."""
     console = Console()
@@ -141,11 +144,9 @@ def run_repl(api_url: Optional[str] = None,
             system_prompt = load_persona(persona)
             history_file = _history_path(workdir)
             messages = _load_messages(history_file, system_prompt)
-            session = PromptSession(history=FileHistory(str(_line_history_path())))
             ctx = ContextTracker(model_window=model.context_window or 8192)
             ctx.refresh(messages)
 
-            console.rule(style="grey39")
             cfg = _config.load()
             show_thoughts = bool(cfg.get("ui", {}).get("show_thoughts", False))
             # Autocompact: --no-autocompact CLI flag wins; otherwise the
@@ -154,35 +155,101 @@ def run_repl(api_url: Optional[str] = None,
                 autocompact = False
             else:
                 autocompact = bool(cfg.get("ui", {}).get("autocompact", True))
-            ctx_label = (
-                f"{ctx.window // 1024}k ctx" if ctx.window >= 1024
-                else f"{ctx.window} ctx"
-            )
+            # Persona-evolve: --persona-evolve flag wins; otherwise persisted.
+            if persona_evolve:
+                evolve = True
+            else:
+                evolve = bool(cfg.get("ui", {}).get("persona_evolve", False))
+
+            # Hook the set_persona tool so the model can rewrite the
+            # current system prompt. The hook is closed over the local
+            # state below; we update it via the nonlocal-capturing
+            # apply_persona() helper.
             ctx_source = "server" if model.context_window else "fallback"
-            console.print(
-                f"🦊 [bold magenta]lilly[/bold magenta] is awake · "
-                f"[cyan]{model.alias}[/cyan] · "
-                f"[dim]{model.endpoint.label}@{model.endpoint.base_url}[/dim] · "
-                f"[dim]{ctx_label} ({ctx_source})[/dim] · "
-                f"[dim]{workdir}[/dim]  ·  {len(all_tools())} tools"
-                + ("  ·  [yellow]bypass-perms[/yellow]" if bypass_perms else "")
+
+            def _persona_hook(text: str) -> dict:
+                nonlocal system_prompt, persona
+                system_prompt = text
+                if messages and messages[0].get("role") == "system":
+                    messages[0]["content"] = system_prompt
+                else:
+                    messages.insert(0, {"role": "system", "content": system_prompt})
+                ctx.refresh(messages)
+                # Persist to disk if persona-evolve is on. Save under the
+                # current persona name (or "evolved" if it's "default" so
+                # we never clobber the bundled file).
+                saved_path = None
+                scope = "session"
+                if evolve:
+                    target = persona if persona != "default" else "evolved"
+                    PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
+                    saved_path = PERSONAS_DIR / f"{target}.md"
+                    saved_path.write_text(text)
+                    persona = target
+                    scope = "persisted"
+                return {
+                    "ok": True,
+                    "scope": scope,
+                    "persona": persona,
+                    "chars": len(text),
+                    "saved_to": str(saved_path) if saved_path else None,
+                }
+
+            persona_tool.set_hook(_persona_hook)
+
+            # Build the bottom toolbar: live status that redraws while
+            # the prompt is shown. Closes over the locals above so
+            # toggles update on the next refresh.
+            def _bottom_toolbar():
+                ctx.refresh(messages)
+                pct = ctx.percent()
+                pct_color = (
+                    "ansigreen" if pct < 70
+                    else "ansiyellow" if pct < 90
+                    else "ansired"
+                )
+                ctx_lbl = (
+                    f"{ctx.window // 1024}k" if ctx.window >= 1024
+                    else f"{ctx.window}"
+                )
+                flags = []
+                if show_thoughts:
+                    flags.append("thoughts")
+                if not autocompact:
+                    flags.append("no-autocompact")
+                if evolve:
+                    flags.append("evolve")
+                if bypass_perms:
+                    flags.append("bypass-perms")
+                flag_str = (" · " + ", ".join(flags)) if flags else ""
+                return HTML(
+                    f"<ansimagenta>🦊 lilly</ansimagenta> · "
+                    f"<ansicyan>{model.alias}</ansicyan> · "
+                    f"{model.endpoint.label}@{model.endpoint.base_url} · "
+                    f"<{pct_color}>ctx {ctx.estimated:.0f}/{ctx_lbl} "
+                    f"({pct:.0f}%, {ctx_source})</{pct_color}> · "
+                    f"persona:{persona} · "
+                    f"{len(all_tools())} tools"
+                    f"{flag_str}"
+                )
+
+            session = PromptSession(
+                history=FileHistory(str(_line_history_path())),
+                bottom_toolbar=_bottom_toolbar,
+                refresh_interval=0.5,
             )
+
+            console.rule(style="grey39")
             console.print(
-                "[dim]   type a message · /help for commands · /exit to leave[/dim]"
+                f"🦊 [bold magenta]lilly[/bold magenta] is awake in "
+                f"[dim]{workdir}[/dim] · "
+                f"[dim]/help · /exit · ctrl+d to leave · ctrl+c twice[/dim]"
             )
             console.rule(style="grey39")
 
             last_interrupt = 0.0
+            prompt_html = HTML("<ansicyan>› </ansicyan>")
             while True:
-                # REPL prompt shows live context usage.
-                ctx.refresh(messages)
-                pct = ctx.percent()
-                ctx_color = "ansigreen" if pct < 70 else (
-                    "ansiyellow" if pct < 90 else "ansired")
-                prompt_html = HTML(
-                    f"<{ctx_color}>[ctx {ctx.estimated:.0f}/{ctx.window}·{pct:.0f}%]</{ctx_color}> "
-                    f"<ansicyan>› </ansicyan>"
-                )
                 try:
                     user_input = session.prompt(prompt_html)
                 except EOFError:
@@ -311,6 +378,23 @@ def run_repl(api_url: Optional[str] = None,
                         _config.save(cfg)
                         state = "on" if show_thoughts else "off"
                         console.print(f"[dim]✓ thoughts {state}[/dim]")
+                        continue
+                    if cmd == "/persona-evolve":
+                        rest = user_input[len("/persona-evolve"):].strip().lower()
+                        if rest in ("on", "true", "1", "yes"):
+                            evolve = True
+                        elif rest in ("off", "false", "0", "no"):
+                            evolve = False
+                        elif rest == "":
+                            evolve = not evolve
+                        else:
+                            console.print("[yellow]usage: /persona-evolve [on|off][/yellow]")
+                            continue
+                        cfg = _config.load()
+                        cfg.setdefault("ui", {})["persona_evolve"] = evolve
+                        _config.save(cfg)
+                        state = "on" if evolve else "off"
+                        console.print(f"[dim]✓ persona-evolve {state}[/dim]")
                         continue
                     if cmd == "/tools":
                         for t in all_tools():

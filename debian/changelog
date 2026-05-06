@@ -1,3 +1,19 @@
+lillycoder (0.1.6-1) unstable; urgency=low
+
+  * REPL: status bar moved to a live bottom toolbar that redraws while
+    you type. Shows model, server, ctx fill, current persona, tool
+    count, and active flags (thoughts, no-autocompact, evolve,
+    bypass-perms). Top welcome line is now a single one-liner so chat
+    starts cleaner.
+  * New tool set_persona lets the model rewrite its own system prompt
+    when the user asks. Permission-gated like any other mutating tool.
+  * /persona-evolve [on|off] (and --persona-evolve flag) controls
+    whether set_persona persists the new persona to disk under
+    ~/.config/lillycoder/personas/. Off by default, in which case the
+    new persona only applies for the current session.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Wed, 06 May 2026 19:30:00 +0000
+
 lillycoder (0.1.5-1) unstable; urgency=low
 
   * REPL: /autocompact [on|off] toggles automatic context compaction.

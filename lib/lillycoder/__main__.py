@@ -68,6 +68,12 @@ def main() -> int:
         help="disable automatic context compaction at 90 percent fill "
              "(overrides config; toggle live with /autocompact)",
     )
+    parser.add_argument(
+        "--persona-evolve",
+        action="store_true",
+        help="allow the set_persona tool to write the new persona to "
+             "disk so it survives restarts (default: session-only).",
+    )
     args = parser.parse_args()
 
     if args.version:
@@ -99,6 +105,7 @@ def main() -> int:
         force=args.force,
         bypass_perms=args.bypass_permissions,
         no_autocompact=args.no_autocompact,
+        persona_evolve=args.persona_evolve,
     )
 
 
