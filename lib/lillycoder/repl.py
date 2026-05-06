@@ -6,13 +6,13 @@ take over message construction once tools exist.
 """
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import sys
 from pathlib import Path
 from typing import Optional
 
-import httpx
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import FileHistory
@@ -23,11 +23,23 @@ import time
 
 from .agent import run_turn
 from . import config as _config
-from .config import load_persona, list_personas, PERSONAS_DIR
+from .config import (
+    load_persona,
+    list_personas,
+    persona_origin,
+    persona_path,
+    add_persona,
+    clone_persona,
+    remove_persona,
+    bundled_base_path,
+    BUNDLED_PERSONAS_DIR,
+    PERSONAS_DIR,
+)
 from .context import ContextTracker
-from .endpoint import acquire, ModelInfo
+from .endpoint import acquire
 from .tools.registry import all_tools
 from .tools import persona as persona_tool
+from .tools import persona_admin
 
 
 SLASH_HELP = """
@@ -38,13 +50,26 @@ slash commands:
   /compact                    (placeholder - autocompact lands in step 7)
   /tools                      list available tools (lands in step 4+)
   /persona                    show the current persona text
-  /personas                   list saved personas
+  /persona-active             show which persona is loaded right now
+  /persona-copy <src> <dst>   clone a persona under a new user-owned name
+  /personas                   list saved personas (alias: /personalities list)
   /setpersona <name>          switch to a saved persona by name
   /setpersona -f <path>       load persona text from a file
   /setpersona <text...>       set persona inline to the given text
+  /personalities list         list all available personalities
+  /personalities load <name>  switch to a saved personality by name
+  /personalities add <name> -f <path>   save a personality from a file
+  /personalities add <name> <text...>   save a personality from inline text
+  /personalities remove <name>          delete a user personality
+  /personalities show <name>            print a personality's text
+  /personalities diff <name>            compare a user shadow against bundled
   /thoughts [on|off]          toggle showing the model's <think> tokens
   /autocompact [on|off]       toggle automatic compaction at 90% context
   /persona-evolve [on|off]    let lilly persist persona changes to disk
+  /max-tokens [auto|<n>]      set per-reply token cap. examples: auto,
+                              256, 1024, 4096, 8192. 'auto' = let the
+                              server decide (server defaults are often
+                              very small, so set 4096+ for long replies)
 """
 
 # Window in which a second Ctrl+C is interpreted as "yes, really exit".
@@ -88,49 +113,14 @@ def _append_history(history_file: Path, role: str, content: str) -> None:
                            ensure_ascii=False) + "\n")
 
 
-def _stream_reply(client: httpx.Client, model: ModelInfo,
-                  messages: list[dict], console: Console) -> str:
-    """Send a chat-completion request, stream tokens to the console as they
-    arrive, return the full text."""
-    payload = {
-        "model": model.alias,
-        "messages": messages,
-        "stream": True,
-        "temperature": 0.7,
-    }
-    full = ""
-    try:
-        with client.stream("POST", "/chat/completions",
-                           json=payload, timeout=None) as resp:
-            for raw in resp.iter_lines():
-                if not raw or not raw.startswith("data: "):
-                    continue
-                body = raw[6:]
-                if body == "[DONE]":
-                    break
-                try:
-                    d = json.loads(body)
-                except json.JSONDecodeError:
-                    continue
-                delta = d["choices"][0].get("delta", {})
-                chunk = delta.get("content")
-                if chunk:
-                    full += chunk
-                    console.print(chunk, end="", style="bright_white",
-                                  highlight=False, markup=False)
-    except httpx.HTTPError as e:
-        console.print(f"\n[red]✗ network error: {e}[/red]")
-    console.print()
-    return full
-
-
 def run_repl(api_url: Optional[str] = None,
              model: Optional[str] = None,
-             persona: str = "default",
+             persona: Optional[str] = None,
              force: bool = False,
              bypass_perms: bool = False,
              no_autocompact: bool = False,
-             persona_evolve: bool = False) -> int:
+             persona_evolve: bool = False,
+             max_tokens_arg: Optional[str] = None) -> int:
     """Main entry. Resolves an endpoint (auto-discover, --api, or saved),
     then loops on user input until /exit."""
     console = Console()
@@ -141,13 +131,38 @@ def run_repl(api_url: Optional[str] = None,
     try:
         with acquire(api_url=api_url, preferred_model=model, force=force,
                      console=console) as (model, client):
+            cfg = _config.load()
+            # If the user didn't pass --persona explicitly, prefer the
+            # last active persona we wrote to config. Falls back to the
+            # bundled default.
+            if persona is None:
+                last = cfg.get("ui", {}).get("last_persona")
+                if isinstance(last, str) and last in list_personas():
+                    persona = last
+                else:
+                    persona = "default"
             system_prompt = load_persona(persona)
             history_file = _history_path(workdir)
             messages = _load_messages(history_file, system_prompt)
             ctx = ContextTracker(model_window=model.context_window or 8192)
             ctx.refresh(messages)
 
-            cfg = _config.load()
+            def _remember_persona(name: str) -> None:
+                """Persist `name` as the last active persona so future
+                runs without --persona pick it up. Best-effort: if disk
+                write fails, swallow (the in-memory state is what matters
+                for the current session)."""
+                try:
+                    c = _config.load()
+                    c.setdefault("ui", {})["last_persona"] = name
+                    _config.save(c)
+                except OSError:
+                    pass
+
+            # Remember the resolved bootstrap persona too, so a fresh
+            # user has the row populated even if they never switch.
+            _remember_persona(persona)
+
             show_thoughts = bool(cfg.get("ui", {}).get("show_thoughts", False))
             # Autocompact: --no-autocompact CLI flag wins; otherwise the
             # persisted setting; otherwise on by default.
@@ -160,12 +175,27 @@ def run_repl(api_url: Optional[str] = None,
                 evolve = True
             else:
                 evolve = bool(cfg.get("ui", {}).get("persona_evolve", False))
+            # max_tokens: CLI flag wins, otherwise persisted, otherwise None
+            # (auto). Stored in config as a string ("auto" or digits) so
+            # the toml writer doesn't have to know about Optional[int].
+            if max_tokens_arg is not None:
+                try:
+                    max_tokens = _config.parse_max_tokens(max_tokens_arg)
+                except ValueError as e:
+                    console.print(f"[red]✗ {e}[/red]")
+                    return 2
+            else:
+                try:
+                    max_tokens = _config.parse_max_tokens(
+                        cfg.get("ui", {}).get("max_tokens", "auto")
+                    )
+                except ValueError:
+                    max_tokens = None
 
             # Hook the set_persona tool so the model can rewrite the
             # current system prompt. The hook is closed over the local
             # state below; we update it via the nonlocal-capturing
             # apply_persona() helper.
-            ctx_source = "server" if model.context_window else "fallback"
 
             def _persona_hook(text: str) -> dict:
                 nonlocal system_prompt, persona
@@ -182,11 +212,22 @@ def run_repl(api_url: Optional[str] = None,
                 scope = "session"
                 if evolve:
                     target = persona if persona != "default" else "evolved"
-                    PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
-                    saved_path = PERSONAS_DIR / f"{target}.md"
-                    saved_path.write_text(text)
+                    saved_path = add_persona(target, text, overwrite=True)
                     persona = target
+                    _remember_persona(persona)
                     scope = "persisted"
+                if saved_path is not None:
+                    console.print(
+                        f"[magenta]   🪄 persona rewritten "
+                        f"({persona}, {len(text)} chars) → "
+                        f"{saved_path}[/magenta]"
+                    )
+                else:
+                    console.print(
+                        f"[magenta]   🪄 persona rewritten "
+                        f"({persona}, {len(text)} chars, session-only; "
+                        f"/persona-evolve on to persist)[/magenta]"
+                    )
                 return {
                     "ok": True,
                     "scope": scope,
@@ -196,6 +237,67 @@ def run_repl(api_url: Optional[str] = None,
                 }
 
             persona_tool.set_hook(_persona_hook)
+
+            # Hooks for the persona_admin tools (set_active_persona,
+            # set_evolve). These mirror the side effects of the
+            # /personalities load and /persona-evolve slash commands so
+            # the model-driven path and the user-typed path stay in
+            # sync.
+            def _load_active_persona(name: str) -> dict:
+                nonlocal system_prompt, persona
+                new_text = load_persona(name)
+                if not new_text.strip():
+                    return {"ok": False,
+                            "error": "persona text is empty"}
+                system_prompt = new_text
+                persona = name
+                if messages and messages[0].get("role") == "system":
+                    messages[0]["content"] = system_prompt
+                else:
+                    messages.insert(
+                        0,
+                        {"role": "system", "content": system_prompt},
+                    )
+                ctx.refresh(messages)
+                _remember_persona(persona)
+                return {"ok": True, "active": persona,
+                        "chars": len(system_prompt)}
+
+            def _set_evolve(enabled: bool) -> dict:
+                nonlocal evolve, persona, system_prompt
+                prev = evolve
+                evolve = bool(enabled)
+                snapshot = None
+                if evolve and not prev:
+                    target = persona
+                    if persona == "default":
+                        target = "evolved"
+                        i = 2
+                        while (PERSONAS_DIR / f"{target}.md").exists():
+                            target = f"evolved-{i}"
+                            i += 1
+                    try:
+                        snapshot = add_persona(
+                            target, system_prompt, overwrite=True,
+                        )
+                    except (ValueError, OSError) as e:
+                        evolve = prev
+                        return {"ok": False,
+                                "error": f"snapshot failed: {e}"}
+                    persona = target
+                    _remember_persona(persona)
+                c = _config.load()
+                c.setdefault("ui", {})["persona_evolve"] = evolve
+                _config.save(c)
+                return {
+                    "ok": True,
+                    "evolve": evolve,
+                    "active": persona,
+                    "snapshotted_to": str(snapshot) if snapshot else None,
+                }
+
+            persona_admin.set_load_hook(_load_active_persona)
+            persona_admin.set_evolve_hook(_set_evolve)
 
             # Build the bottom toolbar: live status that redraws while
             # the prompt is shown. Closes over the locals above so
@@ -222,14 +324,17 @@ def run_repl(api_url: Optional[str] = None,
                 if bypass_perms:
                     flags.append("bypass-perms")
                 flag_str = (" · " + ", ".join(flags)) if flags else ""
+                # Keep this short: prompt_toolkit drops the toolbar if
+                # there isn't enough vertical room for prompt + toolbar.
+                # A long toolbar that wraps to two lines is the usual
+                # cause of the toolbar "disappearing" while typing.
+                mt_lbl = "auto" if max_tokens is None else str(max_tokens)
                 return HTML(
-                    f"<ansimagenta>🦊 lilly</ansimagenta> · "
+                    f"<ansimagenta>🦊</ansimagenta> "
                     f"<ansicyan>{model.alias}</ansicyan> · "
-                    f"{model.endpoint.label}@{model.endpoint.base_url} · "
-                    f"<{pct_color}>ctx {ctx.estimated:.0f}/{ctx_lbl} "
-                    f"({pct:.0f}%, {ctx_source})</{pct_color}> · "
-                    f"persona:{persona} · "
-                    f"{len(all_tools())} tools"
+                    f"<{pct_color}>{pct:.0f}% of {ctx_lbl}</{pct_color}> · "
+                    f"{persona} · "
+                    f"max:{mt_lbl}"
                     f"{flag_str}"
                 )
 
@@ -301,8 +406,10 @@ def run_repl(api_url: Optional[str] = None,
                         continue
                     if cmd == "/personas":
                         for n in list_personas():
+                            origin = persona_origin(n)
+                            tag = "[magenta]user[/magenta]" if origin == "user" else "[blue]bundled[/blue]"
                             marker = " [dim](current)[/dim]" if n == persona else ""
-                            console.print(f"  [cyan]{n}[/cyan]{marker}")
+                            console.print(f"  [cyan]{n}[/cyan] {tag}{marker}")
                         continue
                     if cmd == "/setpersona":
                         rest = user_input[len("/setpersona"):].strip()
@@ -338,12 +445,255 @@ def run_repl(api_url: Optional[str] = None,
                             continue
                         system_prompt = new_prompt
                         persona = new_label
+                        _remember_persona(persona)
                         if messages and messages[0].get("role") == "system":
                             messages[0]["content"] = system_prompt
                         else:
                             messages.insert(0, {"role": "system", "content": system_prompt})
                         ctx.refresh(messages)
                         console.print(f"[dim]✓ persona set ({new_label}, {len(system_prompt)} chars)[/dim]")
+                        continue
+                    if cmd == "/personalities":
+                        rest = user_input[len("/personalities"):].strip()
+                        parts = rest.split(None, 1)
+                        sub = parts[0].lower() if parts else "list"
+                        tail = parts[1] if len(parts) > 1 else ""
+                        if sub in ("list", "ls", ""):
+                            for n in list_personas():
+                                origin = persona_origin(n)
+                                tag = "[magenta]user[/magenta]" if origin == "user" else "[blue]bundled[/blue]"
+                                marker = " [dim](current)[/dim]" if n == persona else ""
+                                console.print(f"  [cyan]{n}[/cyan] {tag}{marker}")
+                            continue
+                        if sub == "show":
+                            target = tail.strip()
+                            if not target:
+                                console.print("[yellow]usage: /personalities show <name>[/yellow]")
+                                continue
+                            p = persona_path(target)
+                            if p is None:
+                                console.print(f"[red]✗ no such personality: {target}[/red]")
+                                continue
+                            try:
+                                console.print(Markdown(f"```\n{p.read_text()}\n```"))
+                            except OSError as e:
+                                console.print(f"[red]✗ read failed: {e}[/red]")
+                            continue
+                        if sub == "load":
+                            target = tail.strip()
+                            if not target:
+                                console.print("[yellow]usage: /personalities load <name>[/yellow]")
+                                continue
+                            if target not in list_personas():
+                                console.print(f"[red]✗ no such personality: {target}[/red]")
+                                continue
+                            new_prompt = load_persona(target)
+                            if not new_prompt.strip():
+                                console.print("[red]✗ empty persona, ignored[/red]")
+                                continue
+                            system_prompt = new_prompt
+                            persona = target
+                            _remember_persona(persona)
+                            if messages and messages[0].get("role") == "system":
+                                messages[0]["content"] = system_prompt
+                            else:
+                                messages.insert(0, {"role": "system", "content": system_prompt})
+                            ctx.refresh(messages)
+                            console.print(f"[dim]✓ persona set ({target}, {len(system_prompt)} chars)[/dim]")
+                            continue
+                        if sub == "add":
+                            add_parts = tail.split(None, 1)
+                            if len(add_parts) < 2:
+                                console.print(
+                                    "[yellow]usage: /personalities add <name> -f <path> | <text...>[/yellow]"
+                                )
+                                continue
+                            new_name, body = add_parts[0], add_parts[1].strip()
+                            overwrite = False
+                            if body.startswith("--force "):
+                                overwrite = True
+                                body = body[len("--force "):].strip()
+                            elif body == "--force":
+                                console.print(
+                                    "[yellow]usage: /personalities add <name> [--force] -f <path> | <text...>[/yellow]"
+                                )
+                                continue
+                            if body.startswith("-f"):
+                                path_str = body[2:].strip()
+                                if not path_str:
+                                    console.print("[yellow]usage: /personalities add <name> -f <path>[/yellow]")
+                                    continue
+                                src = Path(path_str).expanduser()
+                                if not src.is_file():
+                                    console.print(f"[red]✗ no such file: {src}[/red]")
+                                    continue
+                                try:
+                                    body = src.read_text()
+                                except OSError as e:
+                                    console.print(f"[red]✗ read failed: {e}[/red]")
+                                    continue
+                            try:
+                                saved = add_persona(new_name, body, overwrite=overwrite)
+                            except FileExistsError as e:
+                                console.print(
+                                    f"[yellow]✗ already exists: {e}. add --force to overwrite.[/yellow]"
+                                )
+                                continue
+                            except (ValueError, OSError) as e:
+                                console.print(f"[red]✗ {e}[/red]")
+                                continue
+                            console.print(f"[dim]✓ saved → {saved}[/dim]")
+                            continue
+                        if sub in ("remove", "rm", "delete", "del"):
+                            target = tail.strip()
+                            if not target:
+                                console.print("[yellow]usage: /personalities remove <name>[/yellow]")
+                                continue
+                            result = remove_persona(target)
+                            if result == "removed":
+                                console.print(f"[dim]✓ removed user persona: {target}[/dim]")
+                            elif result == "bundled":
+                                console.print(
+                                    f"[yellow]✗ '{target}' is bundled and cannot be removed. "
+                                    f"create a user file with the same name to override it.[/yellow]"
+                                )
+                            else:
+                                console.print(f"[red]✗ no such personality: {target}[/red]")
+                            continue
+                        if sub == "diff":
+                            target = tail.strip()
+                            if not target:
+                                console.print("[yellow]usage: /personalities diff <name>[/yellow]")
+                                continue
+                            user_file = PERSONAS_DIR / f"{target}.md"
+                            bundled_file = BUNDLED_PERSONAS_DIR / f"{target}.md"
+                            base_file = bundled_base_path(target)
+                            if not user_file.exists():
+                                if bundled_file.exists():
+                                    console.print(
+                                        f"[dim]'{target}' has no user shadow; "
+                                        f"loading the bundled file directly. "
+                                        f"nothing to diff.[/dim]"
+                                    )
+                                else:
+                                    console.print(
+                                        f"[red]✗ no such personality: {target}[/red]"
+                                    )
+                                continue
+                            try:
+                                user_text = user_file.read_text()
+                            except OSError as e:
+                                console.print(f"[red]✗ read failed: {e}[/red]")
+                                continue
+                            shown_any = False
+                            if bundled_file.exists():
+                                try:
+                                    bundled_text = bundled_file.read_text()
+                                except OSError as e:
+                                    bundled_text = ""
+                                    console.print(
+                                        f"[yellow]bundled read failed: {e}[/yellow]"
+                                    )
+                                console.print(
+                                    f"[bold]── your shadow vs current bundled "
+                                    f"({target}) ──[/bold]"
+                                )
+                                diff = list(difflib.unified_diff(
+                                    bundled_text.splitlines(keepends=True),
+                                    user_text.splitlines(keepends=True),
+                                    fromfile=f"bundled/{target}.md",
+                                    tofile=f"user/{target}.md",
+                                    n=2,
+                                ))
+                                if diff:
+                                    for line in diff:
+                                        if line.startswith("+++") or line.startswith("---"):
+                                            console.print(
+                                                f"[bold]{line.rstrip()}[/bold]"
+                                            )
+                                        elif line.startswith("@@"):
+                                            console.print(
+                                                f"[cyan]{line.rstrip()}[/cyan]"
+                                            )
+                                        elif line.startswith("+"):
+                                            console.print(
+                                                f"[green]{line.rstrip()}[/green]"
+                                            )
+                                        elif line.startswith("-"):
+                                            console.print(
+                                                f"[red]{line.rstrip()}[/red]"
+                                            )
+                                        else:
+                                            console.print(line.rstrip())
+                                else:
+                                    console.print(
+                                        "[dim](identical)[/dim]"
+                                    )
+                                shown_any = True
+                                if base_file.exists():
+                                    try:
+                                        base_text = base_file.read_text()
+                                    except OSError:
+                                        base_text = ""
+                                    console.print()
+                                    console.print(
+                                        f"[bold]── upstream drift since you "
+                                        f"shadowed: bundled-base vs current "
+                                        f"bundled ──[/bold]"
+                                    )
+                                    drift = list(difflib.unified_diff(
+                                        base_text.splitlines(keepends=True),
+                                        bundled_text.splitlines(keepends=True),
+                                        fromfile=f"bundled-base/{target}.md",
+                                        tofile=f"bundled/{target}.md",
+                                        n=2,
+                                    ))
+                                    if drift:
+                                        for line in drift:
+                                            if line.startswith("+++") or line.startswith("---"):
+                                                console.print(
+                                                    f"[bold]{line.rstrip()}[/bold]"
+                                                )
+                                            elif line.startswith("@@"):
+                                                console.print(
+                                                    f"[cyan]{line.rstrip()}[/cyan]"
+                                                )
+                                            elif line.startswith("+"):
+                                                console.print(
+                                                    f"[green]{line.rstrip()}[/green]"
+                                                )
+                                            elif line.startswith("-"):
+                                                console.print(
+                                                    f"[red]{line.rstrip()}[/red]"
+                                                )
+                                            else:
+                                                console.print(line.rstrip())
+                                    else:
+                                        console.print(
+                                            "[dim](upstream unchanged since "
+                                            "you shadowed)[/dim]"
+                                        )
+                                else:
+                                    console.print()
+                                    console.print(
+                                        "[dim](no bundled-base sidecar; "
+                                        "this shadow predates the sidecar "
+                                        "feature, so we can't show drift "
+                                        "history.)[/dim]"
+                                    )
+                            else:
+                                console.print(
+                                    f"[dim]'{target}' is a user-only persona "
+                                    f"(no bundled counterpart). nothing to "
+                                    f"diff against.[/dim]"
+                                )
+                            if not shown_any:
+                                continue
+                            continue
+                        console.print(
+                            "[yellow]usage: /personalities "
+                            "[list|show|load|add|remove|diff] ...[/yellow]"
+                        )
                         continue
                     if cmd == "/autocompact":
                         rest = user_input[len("/autocompact"):].strip().lower()
@@ -361,6 +711,32 @@ def run_repl(api_url: Optional[str] = None,
                         _config.save(cfg)
                         state = "on" if autocompact else "off"
                         console.print(f"[dim]✓ autocompact {state}[/dim]")
+                        continue
+                    if cmd == "/max-tokens":
+                        rest = user_input[len("/max-tokens"):].strip()
+                        if rest == "":
+                            current = (
+                                "auto" if max_tokens is None else str(max_tokens)
+                            )
+                            console.print(
+                                f"[dim]max_tokens = {current}. usage: "
+                                f"/max-tokens [auto|<n>]. examples: auto, "
+                                f"256, 1024, 4096, 8192.[/dim]"
+                            )
+                            continue
+                        try:
+                            new_val = _config.parse_max_tokens(rest)
+                        except ValueError as e:
+                            console.print(f"[red]✗ {e}[/red]")
+                            continue
+                        max_tokens = new_val
+                        cfg = _config.load()
+                        cfg.setdefault("ui", {})["max_tokens"] = (
+                            "auto" if max_tokens is None else str(max_tokens)
+                        )
+                        _config.save(cfg)
+                        shown = "auto" if max_tokens is None else str(max_tokens)
+                        console.print(f"[dim]✓ max_tokens {shown}[/dim]")
                         continue
                     if cmd == "/thoughts":
                         rest = user_input[len("/thoughts"):].strip().lower()
@@ -381,6 +757,7 @@ def run_repl(api_url: Optional[str] = None,
                         continue
                     if cmd == "/persona-evolve":
                         rest = user_input[len("/persona-evolve"):].strip().lower()
+                        prev_evolve = evolve
                         if rest in ("on", "true", "1", "yes"):
                             evolve = True
                         elif rest in ("off", "false", "0", "no"):
@@ -390,11 +767,98 @@ def run_repl(api_url: Optional[str] = None,
                         else:
                             console.print("[yellow]usage: /persona-evolve [on|off][/yellow]")
                             continue
+                        # When flipping ON, snapshot the current in-memory
+                        # persona to disk and switch the active label to
+                        # that file. This way whatever the user (or the
+                        # model via set_persona) has currently shaped is
+                        # the thing that evolves, not whatever they pick
+                        # next.
+                        if evolve and not prev_evolve:
+                            target = persona
+                            if persona == "default":
+                                target = "evolved"
+                                # Avoid clobbering an existing evolved.md.
+                                i = 2
+                                while (PERSONAS_DIR / f"{target}.md").exists():
+                                    target = f"evolved-{i}"
+                                    i += 1
+                            try:
+                                saved = add_persona(target, system_prompt,
+                                                    overwrite=True)
+                            except (ValueError, OSError) as e:
+                                console.print(f"[red]✗ snapshot failed: {e}[/red]")
+                                evolve = prev_evolve
+                                continue
+                            persona = target
+                            _remember_persona(persona)
+                            console.print(
+                                f"[magenta]   🪄 snapshotted current persona "
+                                f"as [cyan]{persona}[/cyan] → "
+                                f"{saved}[/magenta]"
+                            )
                         cfg = _config.load()
                         cfg.setdefault("ui", {})["persona_evolve"] = evolve
                         _config.save(cfg)
                         state = "on" if evolve else "off"
                         console.print(f"[dim]✓ persona-evolve {state}[/dim]")
+                        continue
+                    if cmd == "/persona-copy":
+                        rest = user_input[len("/persona-copy"):].strip()
+                        parts = rest.split()
+                        force = False
+                        if "--force" in parts:
+                            force = True
+                            parts = [p for p in parts if p != "--force"]
+                        if len(parts) != 2:
+                            console.print(
+                                "[yellow]usage: /persona-copy <src> <dst> "
+                                "[--force][/yellow]"
+                            )
+                            continue
+                        src, dst = parts
+                        try:
+                            saved = clone_persona(src, dst, overwrite=force)
+                        except FileNotFoundError:
+                            console.print(
+                                f"[red]✗ no such persona: {src}[/red]"
+                            )
+                            continue
+                        except FileExistsError:
+                            console.print(
+                                f"[yellow]✗ {dst} already exists. "
+                                f"add --force to overwrite.[/yellow]"
+                            )
+                            continue
+                        except (ValueError, OSError) as e:
+                            console.print(f"[red]✗ {e}[/red]")
+                            continue
+                        console.print(
+                            f"[dim]✓ copied {src} → {dst} ({saved})[/dim]"
+                        )
+                        continue
+                    if cmd == "/persona-active":
+                        origin = persona_origin(persona)
+                        path = persona_path(persona)
+                        path_str = str(path) if path is not None else "(in-memory only)"
+                        console.print(
+                            f"[bold cyan]{persona}[/bold cyan] "
+                            f"[dim]({origin})[/dim]"
+                        )
+                        console.print(f"  [dim]{path_str}[/dim]")
+                        console.print(
+                            f"  [dim]{len(system_prompt)} chars in memory[/dim]"
+                        )
+                        if path is not None:
+                            try:
+                                disk_text = path.read_text()
+                                if disk_text != system_prompt:
+                                    console.print(
+                                        "  [yellow]note: in-memory text "
+                                        "differs from the file on disk "
+                                        "(unsaved evolution).[/yellow]"
+                                    )
+                            except OSError:
+                                pass
                         continue
                     if cmd == "/tools":
                         for t in all_tools():
@@ -428,7 +892,8 @@ def run_repl(api_url: Optional[str] = None,
                 try:
                     run_turn(client, model, messages, console,
                              bypass_perms=bypass_perms, workdir=workdir,
-                             show_thoughts=show_thoughts)
+                             show_thoughts=show_thoughts,
+                             max_tokens=max_tokens)
                 except KeyboardInterrupt:
                     # Turn was cut short. Stay in the REPL; reset the
                     # double-tap window so the same Ctrl+C that stopped

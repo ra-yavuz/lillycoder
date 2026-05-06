@@ -3,20 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>lillycoder: a local-first coder REPL with file and shell tools</title>
-<meta name="description" content="lillycoder is a small open-source CLI by Ramazan Yavuz: a chat REPL that lets a local LLM read, write, and edit files, run shell commands, install packages. Talks to any OpenAI-compatible /v1 endpoint (llama.cpp, ollama, LM Studio, hydra-llm). Pairs with hydra-llm for a fully local coding agent. No cloud, no telemetry.">
+<title>lillycoder: a local-first coder REPL with a persona that evolves</title>
+<meta name="description" content="lillycoder is a small open-source CLI by Ramazan Yavuz: a chat REPL with a persona that evolves. The model on the other end can read, write, and edit files, run shell commands, and install packages. Six bundled personas, live switching, and tool-driven persona management. Talks to any OpenAI-compatible /v1 endpoint (llama.cpp, ollama, LM Studio, hydra-llm). No cloud, no API key, no telemetry.">
 <meta name="author" content="Ramazan Yavuz">
-<meta name="keywords" content="lillycoder, local llm coder, claude code alternative, open source coding assistant, ollama coder, llama.cpp coder, hydra-llm, local repl tool, openai compatible cli, agent file tools">
+<meta name="keywords" content="lillycoder, local llm coder, claude code alternative, aider alternative, open source coding assistant, ollama coder, llama.cpp coder, hydra-llm, local repl tool, openai compatible cli, agent file tools, persona system, evolving persona">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="https://ra-yavuz.github.io/lillycoder/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="lillycoder: a local-first coder REPL">
-<meta property="og:description" content="A chat REPL that lets a local LLM read, write, edit files and run shell commands. Talks to any OpenAI-compatible /v1 endpoint.">
+<meta property="og:title" content="lillycoder: a local-first coder REPL with a persona that evolves">
+<meta property="og:description" content="A chat REPL whose persona you can shape, switch, and grow. Six bundled personas, tool-driven persona management, talks to any local OpenAI-compatible /v1 endpoint.">
 <meta property="og:url" content="https://ra-yavuz.github.io/lillycoder/">
 <meta property="og:site_name" content="ra-yavuz">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="lillycoder: a local-first coder REPL">
-<meta name="twitter:description" content="A chat REPL that lets a local LLM read, write, edit files and run shell commands.">
+<meta name="twitter:title" content="lillycoder: a local-first coder REPL with a persona that evolves">
+<meta name="twitter:description" content="A chat REPL whose persona you can shape, switch, and grow. Six bundled personas, tool-driven persona management, fully local.">
 <meta property="og:image" content="https://ra-yavuz.github.io/lillycoder/logo-icon.png">
 <meta name="twitter:image" content="https://ra-yavuz.github.io/lillycoder/logo-icon.png">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
@@ -121,10 +121,10 @@
   "name": "lillycoder",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux",
-  "description": "A chat REPL that lets a local LLM read, write, and edit files, run shell commands, and install packages in the current folder. Talks to any OpenAI-compatible /v1 endpoint.",
+  "description": "A chat REPL with a persona that evolves. The local LLM can read, write, and edit files, run shell commands, and install packages in the current folder. Six bundled personas, live switching, tool-driven persona management. Talks to any OpenAI-compatible /v1 endpoint.",
   "url": "https://ra-yavuz.github.io/lillycoder/",
   "downloadUrl": "https://github.com/ra-yavuz/lillycoder/releases",
-  "softwareVersion": "0.1.6",
+  "softwareVersion": "0.1.7",
   "license": "https://opensource.org/licenses/MIT",
   "author": {
     "@type": "Person",
@@ -148,10 +148,18 @@
   <picture><source srcset="logo.webp" type="image/webp"><img class="brand" src="logo.png" alt="lillycoder logo: a terminal window with ASCII glyphs and the silhouette of a girl with long hair seen from the back"></picture>
   <h1>lillycoder</h1>
   <p class="tag">
-    A small CLI that drops you into a chat REPL inside any folder. The model on
-    the other end can read, write, and edit your files, run shell commands,
-    and install packages, all gated by a per-tool permission prompt. Talks to
-    any local OpenAI-compatible <code>/v1</code> endpoint.
+    A small CLI that drops you into a chat REPL inside any folder, with a
+    persona that evolves. The model on the other end can read, write, and
+    edit your files, run shell commands, and install packages, all gated by
+    a per-tool permission prompt. Talks to any local OpenAI-compatible
+    <code>/v1</code> endpoint. No cloud, no API key, no telemetry, no account.
+  </p>
+  <p class="tag">
+    What sets it apart: a real persona system. Six bundled voices (default
+    kid coder, tsundere, yandere, sweet, calm-adult, analytical), live
+    switching, copy-on-write user shadows, and a model-driven evolve mode
+    where Lilly rewrites her own system prompt over time and the shape
+    persists across sessions.
   </p>
 
   <div class="links-row">
@@ -232,9 +240,75 @@ lillycoder</code></pre>
    type a message · /help for commands · /exit to leave
 [ctx 1.2k/8k·15%] › what files are in this folder?</code></pre>
 
+  <h2>Personalities</h2>
+  <p>
+    lillycoder ships six bundled personas, all written in first person
+    with explicit anti-roleplay rules so a local model still sounds like
+    Lilly typing rather than narrating about her:
+  </p>
+  <table class="matrix">
+    <tr><th>name</th><th>voice</th></tr>
+    <tr><td><code>default</code></td><td>nine-and-a-half-year-old kid coder, warm and curious</td></tr>
+    <tr><td><code>tsundere</code></td><td>snippy, grumpy, still does the work</td></tr>
+    <tr><td><code>yandere</code></td><td>doting, focused on the user, mildly possessive about the code</td></tr>
+    <tr><td><code>sweet</code></td><td>gentle, encouraging, low-key cheerful</td></tr>
+    <tr><td><code>adult</code></td><td>calm senior engineer voice, no exclamation marks</td></tr>
+    <tr><td><code>analytical</code></td><td>precise, methodical, distinguishes "checked" from "assumed"</td></tr>
+  </table>
+  <p>
+    Switch live with <code>/personalities load &lt;name&gt;</code>. Add your
+    own with <code>/personalities add &lt;name&gt; &lt;text&gt;</code> or
+    drop a markdown file into <code>~/.config/lillycoder/personas/</code>;
+    user files shadow bundled ones of the same name.
+  </p>
+  <p>
+    When you shadow a bundled persona, lillycoder snapshots the bundled
+    text at the moment of override (a <code>.bundled-base.md</code>
+    sidecar). Later you can run <code>/personalities diff &lt;name&gt;</code>
+    to see your edits AND any upstream drift since you forked. Bundled
+    files are never overwritten by an update if you have a shadow.
+  </p>
+  <p>
+    Lilly can manage her own personalities through real tool calls
+    (<code>add_persona</code>, <code>clone_persona</code>,
+    <code>set_active_persona</code>, <code>set_evolve</code>). Tell her
+    "make a pirate persona and switch to it" and she does it through the
+    tool registry, not by writing files in your repo.
+  </p>
+  <p>
+    Flip <code>/persona-evolve on</code> to snapshot the current in-memory
+    persona to disk and switch to it. From then on, every persona rewrite
+    (whether by the model itself via <code>set_persona</code>, or by you
+    inline) gets persisted to that file. Next launch, lillycoder reloads
+    the last active persona automatically.
+  </p>
+
+  <h2>Token budget</h2>
+  <p>
+    The default <code>/max-tokens auto</code> computes a per-reply cap
+    from your model's reported context window (about 85% of remaining
+    headroom, with a 4096-token ceiling). That matters because:
+  </p>
+  <ul>
+    <li>Most local servers default to a tiny <code>n_predict</code>
+        (llama.cpp's default is 128). lillycoder's <code>auto</code>
+        replaces that with a real number.</li>
+    <li>Reasoning models burn unpredictable amounts of budget on hidden
+        <code>&lt;think&gt;</code> content before they emit visible text.
+        With a small fixed cap they can exhaust the budget inside the
+        think block. <code>auto</code> leaves headroom for both.</li>
+  </ul>
+  <p>
+    Set an explicit cap any time:
+    <code>/max-tokens 256</code> for snappy answers,
+    <code>/max-tokens 4096</code> for long-form. Or via CLI:
+    <code>lillycoder --max-tokens 4096</code>.
+  </p>
+
   <h2>Compatible servers</h2>
   <table class="matrix">
     <tr><th>Server</th><th>Default port</th><th>Notes</th></tr>
+    <tr><td><a href="https://ra-yavuz.github.io/hydra-llm/">hydra-llm</a></td><td>18080+</td><td>recommended pairing (sibling project)</td></tr>
     <tr><td>llama.cpp <code>llama-server</code></td><td>8080</td><td>OpenAI <code>/v1</code> shape native</td></tr>
     <tr><td>ollama</td><td>11434</td><td>OpenAI surface at <code>/v1</code></td></tr>
     <tr><td>LM Studio</td><td>1234</td><td>built-in local server</td></tr>

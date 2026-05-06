@@ -34,6 +34,7 @@ from .endpoint import ModelInfo
 from .safety import classify_command, classify_path_write
 from .tools import bash as bash_module
 from .tools.registry import all_tools, by_name, schemas_for_model
+from .spinner import Spinner
 
 
 MAX_TOOL_ITERATIONS = 12
@@ -209,21 +210,58 @@ def _route_content_chunk(console: Console, chunk: str, state: dict,
             state["in_thought"] = True
 
 
+def _resolve_max_tokens(model: ModelInfo, messages: list[dict],
+                        setting: Optional[int]) -> int:
+    """Compute the max_tokens value to send.
+
+    setting=None means 'auto': use most of the remaining context window
+    (after subtracting an estimate of the prompt), capped at 16384 so
+    huge-context models don't ask for absurdly long replies on small
+    prompts. setting>0 is taken as an explicit user override.
+
+    The estimate is char/4 (same heuristic as ContextTracker); imprecise
+    but consistent. We leave a 15% margin for tokeniser slop."""
+    AUTO_FLOOR = 512
+    AUTO_CEILING = 4096
+    if setting is not None and setting > 0:
+        return setting
+    window = model.context_window or 8192
+    char_total = 0
+    for m in messages:
+        content = m.get("content") or ""
+        if isinstance(content, str):
+            char_total += len(content)
+        for tc in m.get("tool_calls", []) or []:
+            fn = tc.get("function") or {}
+            char_total += len(fn.get("name", "") or "")
+            char_total += len(fn.get("arguments", "") or "")
+    prompt_estimate = int(char_total / 4.0)
+    headroom = window - prompt_estimate
+    budget = int(headroom * 0.85)
+    if budget < AUTO_FLOOR:
+        budget = AUTO_FLOOR
+    if budget > AUTO_CEILING:
+        budget = AUTO_CEILING
+    return budget
+
+
 async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
                                   messages: list[dict], console: Console,
-                                  show_thoughts: bool = False
+                                  show_thoughts: bool = False,
+                                  max_tokens: Optional[int] = None,
                                   ) -> tuple[str, list[dict]]:
     """Send one chat-completion request, stream content tokens to the
     console, accumulate any tool calls. Returns (content_text, [tool_calls]).
     Raises KeyboardInterrupt back to the caller if the user hits Ctrl+C
     during the stream (caller wipes the spinner and resumes the REPL)."""
-    payload = {
+    payload: dict = {
         "model": model.alias,
         "messages": messages,
         "tools": schemas_for_model(),
         "tool_choice": "auto",
         "stream": True,
         "temperature": 0.5,   # lower than chat - we want decisive tool use
+        "max_tokens": _resolve_max_tokens(model, messages, max_tokens),
     }
     full_content = ""
     accum_tools: dict[int, dict] = {}
@@ -232,8 +270,9 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
 
     # Spinner shown while waiting for the model's first byte. Stopped as
     # soon as any delta (content or tool_call) arrives so streamed output
-    # isn't visually fighting the spinner.
-    status = console.status("[dim]lilly is thinking...[/dim]", spinner="dots")
+    # isn't visually fighting the spinner. Plain-stdout spinner so it
+    # plays nicely with prompt_toolkit's patch_stdout().
+    status = Spinner("lilly is thinking...")
     status.start()
     spinner_active = True
     interrupted = False
@@ -346,7 +385,8 @@ def _short_args(args: dict) -> str:
 def run_turn(client: httpx.Client, model: ModelInfo,
              messages: list[dict], console: Console,
              bypass_perms: bool, workdir: Path,
-             show_thoughts: bool = False) -> None:
+             show_thoughts: bool = False,
+             max_tokens: Optional[int] = None) -> None:
     """Single user turn: may involve multiple model + tool iterations.
     Mutates `messages` in place. Raises KeyboardInterrupt back to the
     caller if the user hits Ctrl+C during the turn."""
@@ -357,6 +397,7 @@ def run_turn(client: httpx.Client, model: ModelInfo,
             content, tool_calls = await _stream_one_completion(
                 client, model, messages, console,
                 show_thoughts=show_thoughts,
+                max_tokens=max_tokens,
             )
             # Build assistant message; OpenAI shape requires content key
             # even when tool_calls present.
@@ -393,12 +434,13 @@ def run_turn(client: httpx.Client, model: ModelInfo,
                     console.print(f"[yellow]   ⚠ {reason}[/yellow]")
                 else:
                     tool = by_name(name)
-                    try:
-                        result = tool.handler(**args)
-                    except TypeError as e:
-                        result = {"ok": False, "error": f"bad args: {e}"}
-                    except Exception as e:
-                        result = {"ok": False, "error": str(e)}
+                    with Spinner(f"running {name}..."):
+                        try:
+                            result = tool.handler(**args)
+                        except TypeError as e:
+                            result = {"ok": False, "error": f"bad args: {e}"}
+                        except Exception as e:
+                            result = {"ok": False, "error": str(e)}
                     if result.get("ok"):
                         console.print(f"[green]   ✓ {name}[/green]")
                     else:

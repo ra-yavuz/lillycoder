@@ -31,9 +31,11 @@ def main() -> int:
         help="model id to request from the endpoint (must be in its catalog)",
     )
     parser.add_argument(
-        "--persona", "-p", default="default",
+        "--persona", "-p", default=None,
         help="persona name (file under ~/.config/lillycoder/personas/), "
-             "or 'default' for the bundled lilly-coder persona",
+             "or 'default' for the bundled lilly-coder persona. if "
+             "omitted, lillycoder remembers the last active persona "
+             "across runs.",
     )
     parser.add_argument(
         "--bypass-permissions",
@@ -74,6 +76,15 @@ def main() -> int:
         help="allow the set_persona tool to write the new persona to "
              "disk so it survives restarts (default: session-only).",
     )
+    parser.add_argument(
+        "--max-tokens",
+        default=None,
+        help="cap the per-reply token budget. 'auto' lets the server "
+             "decide (the default; same as today, but server defaults "
+             "are often very small, e.g. 128). examples: auto, 256, "
+             "1024, 4096, 8192. persists to config; toggle live with "
+             "/max-tokens.",
+    )
     args = parser.parse_args()
 
     if args.version:
@@ -106,6 +117,7 @@ def main() -> int:
         bypass_perms=args.bypass_permissions,
         no_autocompact=args.no_autocompact,
         persona_evolve=args.persona_evolve,
+        max_tokens_arg=args.max_tokens,
     )
 
 

@@ -9,6 +9,14 @@ venv/
 .lillycoder/
 WORKINGDIR/scratch/
 WORKINGDIR/*/.lillycoder/
+WORKINGDIR/.bash_history
+WORKINGDIR/*/.bash_history
+WORKINGDIR/persona-smoke*.txt
+WORKINGDIR/persona-tools-e2e.txt
+
+# Shell history / Claude Code workspace state
+.bash_history
+.claude/
 
 # Models are big, never committed
 models/

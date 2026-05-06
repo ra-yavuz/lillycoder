@@ -1,3 +1,42 @@
+lillycoder (0.1.7-1) unstable; urgency=low
+
+  * Six bundled personas instead of one: default (kid coder), tsundere,
+    yandere, sweet, adult, analytical. All written in first person with
+    explicit anti-roleplay rules so local models stop narrating Lilly
+    in the third person or emitting asterisk-actions.
+  * /personalities group of slash commands: list, show, load, add,
+    remove, diff. Bundled-shadow protection: when a user file overrides
+    a bundled persona, lillycoder snapshots the bundled text alongside
+    so /personalities diff can later show drift between your fork and
+    the upstream version.
+  * /persona-active shows which persona is loaded right now, with
+    origin (bundled vs user) and on-disk path, plus a warning when the
+    in-memory text has diverged from the file.
+  * /persona-copy <src> <dst> clones any persona (bundled or user)
+    into a new user-owned name. First step of forking for edit.
+  * /persona-evolve on now snapshots the current in-memory persona to
+    disk and switches the active label to that file, so whatever shape
+    Lilly currently has is what evolves. Combined with [ui] last_persona
+    persistence, the evolved persona is sticky across launches; bare
+    `lillycoder` (no --persona) reloads the last active one.
+  * /max-tokens [auto|<n>] and --max-tokens flag. Per-reply token cap,
+    persisted to config. 'auto' is now a computed value (about 85% of
+    remaining context, capped at 4096), not just an omitted field, so
+    reasoning models stop producing empty replies because the server's
+    tiny default (llama.cpp's --n-predict defaults to 128) is no longer
+    in charge.
+  * Five new tools so Lilly manages personas via tool calls instead of
+    write_file: list_personas, add_persona, clone_persona,
+    set_active_persona, set_evolve. Asking her to "make a pirate
+    persona and switch to it" works end to end through the tool
+    registry.
+  * REPL: live spinner during long tool execution, magenta confirmation
+    line when a persona is rewritten, tighter bottom toolbar so it
+    stops being dropped on narrow terminals.
+  * Removed dead _stream_reply path and its unused imports.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Wed, 06 May 2026 21:30:00 +0000
+
 lillycoder (0.1.6-1) unstable; urgency=low
 
   * REPL: status bar moved to a live bottom toolbar that redraws while

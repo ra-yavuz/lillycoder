@@ -1,8 +1,16 @@
 # lillycoder
 
-**A local-first coder REPL with file and shell tools. Bring your own LLM.**
+**A local-first coder REPL with a persona that evolves. Bring your own LLM.**
 
-`lillycoder` drops you into a chat REPL inside any folder. The model on the other end can read, write, and edit files, run shell commands, install packages, and grep your project. It talks to any OpenAI-compatible `/v1` endpoint, so you pair it with whichever local LLM server you already use (llama.cpp, ollama, LM Studio, etc.). No cloud, no API key, no telemetry.
+`lillycoder` drops you into a chat REPL inside any folder. The model on the other end can read, write, and edit files, run shell commands, install packages, and grep your project. It talks to any OpenAI-compatible `/v1` endpoint, so you pair it with whichever local LLM server you already use (llama.cpp, ollama, LM Studio, [hydra-llm](https://ra-yavuz.github.io/hydra-llm/)). No cloud. No API key. No telemetry. No account.
+
+What sets lillycoder apart from other coder agents:
+
+- **It has a personality, and the personality is yours.** Six bundled personas (default kid coder, tsundere, yandere, sweet, calm-adult, analytical), live switching with `/personalities load <name>`, copy-on-write user shadows, and a `/personalities diff` to see how your fork drifted from the upstream version after an update.
+- **The persona evolves.** Ask Lilly to rewrite her own persona, flip `/persona-evolve on`, and the current shape gets snapshotted to disk and refined across sessions. The next time you launch, she comes back as the version you grew, not the bundled default.
+- **Lilly manages her own personalities.** `add_persona`, `clone_persona`, `set_active_persona`, `set_evolve` are real tools the model can call. Tell her "make a pirate persona and switch to it" and she does it through tool calls, not by writing files into your repo.
+- **Smart token budgeting on thinking models.** `auto` mode is computed from your model's actual context window, so reasoning models get enough headroom to finish thinking AND emit visible content. Override with `/max-tokens <n>` whenever you want a hard cap.
+- **All local. Always.** lillycoder runs against any OpenAI-compatible server you point it at. It does not phone home, does not require an account, and does not depend on any cloud service.
 
 > ## Disclaimer / no warranty
 >
@@ -23,7 +31,7 @@
 
 ## What it is
 
-A small Python CLI. You run `lillycoder` in a project directory and start typing. The model picks tools (read_file, write_file, edit_file, bash, mkdir, mv, rm, grep, find, list_dir, pkg_install) to do what you asked.
+A small Python CLI. You run `lillycoder` in a project directory and start typing. The model picks tools (`read_file`, `write_file`, `edit_file`, `bash`, `mkdir`, `mv`, `rm`, `grep`, `find`, `list_dir`, `pkg_install`, plus the persona-admin tools) to do what you asked.
 
 Every mutating action is gated:
 
@@ -38,6 +46,8 @@ The hard-deny safety list runs on top of that and cannot be turned off by the pe
 ## What it is NOT
 
 `lillycoder` does not start LLM servers, manage Docker, or ship a model. It expects a server to be running already at, say, `http://localhost:11434/v1` (ollama) or `http://localhost:8080/v1` (llama.cpp). On first run it scans common ports and offers to use whatever it finds; you can also pass `--api http://your.url`.
+
+For the server side, see [hydra-llm](https://ra-yavuz.github.io/hydra-llm/) (sibling project, also under `ra-yavuz`).
 
 ## Install
 
@@ -95,9 +105,9 @@ Output:
 🦊 found 1 endpoint: http://localhost:11434/v1 (ollama, 3 models)
    use it? [Y/n] y
 ✓ ollama · qwen2.5-coder:7b
-🦊 lilly is awake · qwen2.5-coder:7b · /home/you/myproject  ·  11 tools
-   type a message · /help for commands · /exit to leave
-[ctx 1.2k/8k·15%] › what files are in this folder?
+🦊 lilly is awake in /home/you/myproject · /help · /exit · ctrl+d to leave · ctrl+c twice
+🦊 qwen2.5-coder:7b · 1% of 8k · default · max:auto
+› what files are in this folder?
 ```
 
 Or skip discovery and point at a known endpoint:
@@ -108,42 +118,130 @@ lillycoder --api http://localhost:8080/v1
 
 ## Slash commands
 
-| command       | what it does |
-|---            |---|
-| `/help`       | show commands |
-| `/tools`      | list tools the model can call |
-| `/persona`    | show the active persona |
-| `/clear`      | wipe conversation, keep persona |
-| `/compact`    | summarise older history into a system note |
-| `/exit`       | leave (or `Ctrl+D`) |
+| command                              | what it does |
+|---                                   |---|
+| `/help`                              | show all commands |
+| `/tools`                             | list tools the model can call |
+| `/clear`                             | wipe conversation, keep persona |
+| `/compact`                           | summarise older history into a system note |
+| `/exit`                              | leave (or `Ctrl+D`) |
+| `/persona`                           | show the current persona text |
+| `/persona-active`                    | which persona is loaded right now (name + origin + path) |
+| `/persona-copy <src> <dst>`          | clone a persona under a new user-owned name |
+| `/personas`                          | list saved personas (alias for `/personalities list`) |
+| `/setpersona <name\|-f path\|text>`  | switch by name, by file, or by inline text |
+| `/personalities list`                | every available persona with origin tags (bundled / user) |
+| `/personalities load <name>`         | switch the active persona by name |
+| `/personalities show <name>`         | print a persona's full text |
+| `/personalities add <name> ...`      | save a personality from inline text or `-f <path>` |
+| `/personalities remove <name>`       | delete a user persona (bundled ones are read-only) |
+| `/personalities diff <name>`         | compare a user shadow against the current bundled file |
+| `/persona-evolve [on\|off]`          | snapshot the current persona and let it evolve over time |
+| `/max-tokens [auto\|<n>]`            | per-reply token cap. `auto` = computed from model context |
+| `/thoughts [on\|off]`                | show or hide the model's `<think>` tokens |
+| `/autocompact [on\|off]`             | toggle automatic compaction at 90% context fill |
 
-## Personas
+## Personalities, plural
 
-The bundled persona is a kid-coder voice. To use a different one, drop a markdown file at `~/.config/lillycoder/personas/<name>.md` and run `lillycoder --persona <name>`.
+lillycoder ships six bundled personas under `lib/lillycoder/persona/`:
 
-```sh
-lillycoder --list-personas
-lillycoder --persona terse-senior
+| name         | voice |
+|---           |---|
+| `default`    | nine-and-a-half-year-old kid coder, warm and curious |
+| `tsundere`   | snippy, grumpy, still does the work |
+| `yandere`    | doting, focused on the user, mildly possessive about the code (not creepy toward the user) |
+| `sweet`      | gentle, encouraging, low-key cheerful |
+| `adult`      | calm senior engineer voice, no exclamation marks, no emoji |
+| `analytical` | precise, methodical, distinguishes "checked" from "assumed" |
+
+All six are written in first person with explicit anti-roleplay rules (no asterisk-actions, no third-person self-narration), so a fanfic-trained local model still sounds like Lilly typing rather than narrating about her.
+
+### Switching live
+
 ```
+› /personalities load tsundere
+✓ persona set (tsundere, 2183 chars)
+
+› /personalities load default
+✓ persona set (default, 2949 chars)
+```
+
+### User personas shadow bundled ones
+
+Drop a markdown file at `~/.config/lillycoder/personas/<name>.md` and it shadows any bundled persona of the same name. Or use the slash command:
+
+```
+› /personalities add coding-mentor "You are Lilly, in mentor mode. ..."
+✓ saved → /home/you/.config/lillycoder/personas/coding-mentor.md
+```
+
+When you shadow a bundled persona, lillycoder writes a sidecar copy of the bundled text at the moment of override (`<name>.bundled-base.md`). After a future package update, run `/personalities diff <name>` to see your edits AND any upstream drift since you forked. Bundled files are never modified by an update if you have a shadow.
+
+### Lilly creates personalities herself
+
+Just ask her:
+
+```
+› please create a personality called 'pirate' and switch to me to it
+   ⏳ add_persona (name='pirate', text='You are a pirate. ...')
+   ✓ add_persona
+   ⏳ set_active_persona (name='pirate')
+   ✓ set_active_persona
+arrr, done! i've forged a new persona called 'pirate' and stepped onto the deck.
+   ready to hunt for some code treasure, matey ✨
+```
+
+She has real tools for this (`list_personas`, `add_persona`, `clone_persona`, `set_active_persona`, `set_evolve`), so the persona ends up where it should be (XDG config dir) instead of as a stray markdown file in your repo.
+
+### Persona evolve
+
+Once you have her shaped the way you like (you edited the persona inline, or you asked her to rewrite her own with `set_persona`), turn evolve on:
+
+```
+› /persona-evolve on
+   🪄 snapshotted current persona as evolved → /home/you/.config/lillycoder/personas/evolved.md
+✓ persona-evolve on
+```
+
+That snapshots the **current in-memory shape** to disk and switches the active persona to that file. From then on, every time the model rewrites its persona via `set_persona`, the new shape gets written back to that same file. Next time you launch, lillycoder reloads the last active persona automatically; you don't have to pass `--persona evolved`.
+
+To roll back to a clean bundled persona, just `/personalities load default` (or remove the user shadow with `/personalities remove evolved`).
+
+## Token budget (`/max-tokens`)
+
+The default is `auto`. Under `auto`, lillycoder computes a sensible per-reply cap from your model's reported context window: roughly 85% of the headroom remaining after the prompt, with a 4096-token ceiling. That matters because:
+
+- Most local servers default to a tiny `n_predict` (llama.cpp's default is **128 tokens**), which makes large models look "crazy short" out of the box. lillycoder's `auto` overrides that with a real number.
+- Reasoning / "thinking" models burn unpredictable amounts of budget on hidden `<think>` content before they emit visible text. With a small fixed cap, they can exhaust the budget inside the think block and produce empty replies. `auto` leaves enough room for both.
+
+Set an explicit cap for crisp answers:
+
+```
+› /max-tokens 256       # short, snappy
+› /max-tokens 4096      # long-form
+› /max-tokens auto      # back to computed
+```
+
+Or via CLI: `lillycoder --max-tokens 4096`.
 
 ## Compatible servers
 
 Anything speaking the OpenAI `/v1/chat/completions` shape works. Tested:
 
+- [`hydra-llm`](https://ra-yavuz.github.io/hydra-llm/) (sibling project, recommended pairing)
 - `llama.cpp` (`llama-server`)
 - `ollama` (`/v1` compatibility surface)
 - `LM Studio` (local server)
-- `hydra-llm` (also publishes /v1)
 
 The model on the other end matters: tool-calling reliability needs a model trained for it. lillycoder warns if the chosen model is not in its known-tool-capable allowlist (Qwen 2.5+, Qwen 3, Gemma 3+, Llama 3.1+, Mistral Small 3, Dolphin 3 R1). Pass `--force` to silence the warning.
 
 ## Pairs with hydra-llm
 
-[hydra-llm](https://github.com/ra-yavuz/hydra-llm) is a sibling project that manages local LLM servers: it wraps llama.cpp in Docker, ships a curated GGUF catalog with anonymous downloads, and exposes each running model as an OpenAI-compatible endpoint on a stable local port. lillycoder talks that exact shape, so the two compose into a fully local coding agent in one terminal:
+[hydra-llm](https://ra-yavuz.github.io/hydra-llm/) is a sibling project that manages local LLM servers: it wraps llama.cpp in Docker, ships a curated GGUF catalog with anonymous downloads, and exposes each running model as an OpenAI-compatible endpoint on a stable local port. lillycoder talks that exact shape, so the two compose into a fully local coding agent in one terminal:
 
 ```sh
 # in hydra-llm:
-hydra-llm start qwen2.5-32b           # or any 'code' tagged model from list-online
+hydra-llm start qwen2.5-32b           # or any 'code'-tagged model from list-online
 hydra-llm api   qwen2.5-32b           # prints the URL
 
 # in your project directory:
@@ -151,7 +249,7 @@ lillycoder --api http://localhost:18087/v1
 # (lilly auto-detects common local LLM ports, so just `lillycoder` often works)
 ```
 
-hydra-llm handles model lifecycle (download, start/stop, system prompts, persistent sessions, optional KDE Plasma 6 panel widget). lillycoder is the agent on top: file tools, shell tools, grep, permission gating. Use them together, or use lillycoder with whatever local server you already run.
+hydra-llm handles model lifecycle (download, start/stop, system prompts, persistent sessions, optional KDE Plasma 6 panel widget). lillycoder is the agent on top: file tools, shell tools, grep, permission gating, persona system. Use them together, or use lillycoder with whatever local server you already run.
 
 ## Development
 
@@ -175,16 +273,18 @@ lillycoder/
     agent.py                  turn loop, tool dispatch
     discovery.py              scans localhost for /v1 endpoints
     endpoint.py               connection layer
-    config.py                 XDG config + personas
+    config.py                 XDG config + personas + max_tokens parser
     context.py                token estimate, /compact, autocompact
     permissions.py            per-tool [y/n/always] prompts
     safety.py                 hard-deny classifier
-    repl.py                   prompt_toolkit loop
-    tools/                    one file per tool
-    persona/default.md        bundled lilly-coder persona
+    spinner.py                small carriage-return spinner
+    repl.py                   prompt_toolkit loop, slash commands
+    tools/                    one file per tool (incl. persona, persona_admin)
+    persona/                  bundled personas (default, tsundere, ...)
   debian/                     debian packaging
   docs/index.html             project Pages site
   scripts/build-deb.sh        portable .deb build (no debhelper)
+  scripts/persona-smoke.py    end-to-end smoke for personas + max_tokens
   WORKINGDIR/                 mounted into the dev container
 ```
 
