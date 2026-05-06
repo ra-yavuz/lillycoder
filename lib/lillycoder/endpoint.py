@@ -29,6 +29,7 @@ class ModelInfo:
     to the chat-completions request."""
     alias: str          # the model id we send in payload["model"]
     endpoint: Endpoint  # which server it lives on
+    context_window: Optional[int] = None  # tokens, from server meta if known
 
 
 def _pick_model(console: Console, endpoint: Endpoint,
@@ -163,7 +164,11 @@ def acquire(api_url: Optional[str] = None,
     chosen_model = _pick_model(cons, endpoint, preferred_model, force)
     cons.print(f"[green]✓ {endpoint.label} · {chosen_model}[/green]")
 
-    info = ModelInfo(alias=chosen_model, endpoint=endpoint)
+    info = ModelInfo(
+        alias=chosen_model,
+        endpoint=endpoint,
+        context_window=endpoint.context_for(chosen_model),
+    )
     client = httpx.Client(base_url=endpoint.base_url, timeout=None)
     try:
         yield info, client

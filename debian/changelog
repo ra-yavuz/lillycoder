@@ -1,3 +1,14 @@
+lillycoder (0.1.3-1) unstable; urgency=low
+
+  * Context window is now read from the server instead of hardcoded to
+    8192. Uses /v1/models meta (n_ctx, n_ctx_train) and falls back to
+    llama.cpp /props for the runtime n_ctx. Also accepts top-level
+    context_length / max_context_length / context_window keys.
+  * Banner now shows the active context size and whether it came from
+    the server or the 8k fallback.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Wed, 06 May 2026 17:00:00 +0000
+
 lillycoder (0.1.2-1) unstable; urgency=low
 
   * REPL: add /setpersona for switching personas mid-session.

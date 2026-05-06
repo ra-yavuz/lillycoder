@@ -133,14 +133,20 @@ def run_repl(api_url: Optional[str] = None,
             history_file = _history_path(workdir)
             messages = _load_messages(history_file, system_prompt)
             session = PromptSession(history=FileHistory(str(_line_history_path())))
-            ctx = ContextTracker(model_window=8192)
+            ctx = ContextTracker(model_window=model.context_window or 8192)
             ctx.refresh(messages)
 
             console.rule(style="grey39")
+            ctx_label = (
+                f"{ctx.window // 1024}k ctx" if ctx.window >= 1024
+                else f"{ctx.window} ctx"
+            )
+            ctx_source = "server" if model.context_window else "fallback"
             console.print(
                 f"🦊 [bold magenta]lilly[/bold magenta] is awake · "
                 f"[cyan]{model.alias}[/cyan] · "
                 f"[dim]{model.endpoint.label}@{model.endpoint.base_url}[/dim] · "
+                f"[dim]{ctx_label} ({ctx_source})[/dim] · "
                 f"[dim]{workdir}[/dim]  ·  {len(all_tools())} tools"
                 + ("  ·  [yellow]bypass-perms[/yellow]" if bypass_perms else "")
             )
