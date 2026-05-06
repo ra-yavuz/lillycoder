@@ -119,6 +119,22 @@ Anything speaking the OpenAI `/v1/chat/completions` shape works. Tested:
 
 The model on the other end matters: tool-calling reliability needs a model trained for it. lillycoder warns if the chosen model is not in its known-tool-capable allowlist (Qwen 2.5+, Qwen 3, Gemma 3+, Llama 3.1+, Mistral Small 3, Dolphin 3 R1). Pass `--force` to silence the warning.
 
+## Pairs with hydra-llm
+
+[hydra-llm](https://github.com/ra-yavuz/hydra-llm) is a sibling project that manages local LLM servers: it wraps llama.cpp in Docker, ships a curated GGUF catalog with anonymous downloads, and exposes each running model as an OpenAI-compatible endpoint on a stable local port. lillycoder talks that exact shape, so the two compose into a fully local coding agent in one terminal:
+
+```sh
+# in hydra-llm:
+hydra-llm start qwen2.5-32b           # or any 'code' tagged model from list-online
+hydra-llm api   qwen2.5-32b           # prints the URL
+
+# in your project directory:
+lillycoder --api http://localhost:18087/v1
+# (lilly auto-detects common local LLM ports, so just `lillycoder` often works)
+```
+
+hydra-llm handles model lifecycle (download, start/stop, system prompts, persistent sessions, optional KDE Plasma 6 panel widget). lillycoder is the agent on top: file tools, shell tools, grep, permission gating. Use them together, or use lillycoder with whatever local server you already run.
+
 ## Development
 
 The repo includes `docker-compose.yml` for an isolated dev sandbox: it mounts `WORKINGDIR/` from the host into a container that already has `lillycoder` installed. Edit on host, run inside container:
@@ -156,4 +172,4 @@ lillycoder/
 
 ## Author
 
-Ramazan Yavuz — [ramazan-yavuz.tr](https://ramazan-yavuz.tr) / [ra-yavuz on GitHub](https://github.com/ra-yavuz)
+Ramazan Yavuz: [ramazan-yavuz.tr](https://ramazan-yavuz.tr) / [ra-yavuz on GitHub](https://github.com/ra-yavuz)

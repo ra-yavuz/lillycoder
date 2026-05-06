@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>lillycoder: a local-first coder REPL with file and shell tools</title>
-<meta name="description" content="lillycoder is a small open-source CLI by Ramazan Yavuz: a chat REPL that lets a local LLM read, write, and edit files, run shell commands, install packages. Talks to any OpenAI-compatible /v1 endpoint (llama.cpp, ollama, LM Studio). No cloud, no telemetry.">
+<meta name="description" content="lillycoder is a small open-source CLI by Ramazan Yavuz: a chat REPL that lets a local LLM read, write, and edit files, run shell commands, install packages. Talks to any OpenAI-compatible /v1 endpoint (llama.cpp, ollama, LM Studio, hydra-llm). Pairs with hydra-llm for a fully local coding agent. No cloud, no telemetry.">
 <meta name="author" content="Ramazan Yavuz">
-<meta name="keywords" content="lillycoder, local llm coder, claude code alternative, open source coding assistant, ollama coder, llama.cpp coder, local repl tool, openai compatible cli">
+<meta name="keywords" content="lillycoder, local llm coder, claude code alternative, open source coding assistant, ollama coder, llama.cpp coder, hydra-llm, local repl tool, openai compatible cli, agent file tools">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="https://ra-yavuz.github.io/lillycoder/">
 <meta property="og:type" content="website">
@@ -231,6 +231,30 @@ lillycoder</code></pre>
     its known-tool-capable allowlist (Qwen 2.5+, Qwen 3, Gemma 3+, Llama
     3.1+, Mistral Small 3, Dolphin 3 R1). Pass <code>--force</code> to
     silence.
+  </p>
+
+  <h2>Pairs with hydra-llm</h2>
+  <p>
+    <a href="https://ra-yavuz.github.io/hydra-llm/">hydra-llm</a> is a
+    sibling project that manages local LLM servers: it wraps llama.cpp in
+    Docker, ships a curated GGUF catalog with anonymous downloads, and
+    exposes each running model as an OpenAI-compatible endpoint on a
+    stable local port. lillycoder talks that exact shape, so the two
+    compose into a fully local coding agent in one terminal:
+  </p>
+<pre><code># in hydra-llm:
+hydra-llm start qwen2.5-32b           # or any 'code' tagged model
+hydra-llm api   qwen2.5-32b           # prints the URL
+
+# in your project directory:
+lillycoder --api http://localhost:18087/v1
+# (lilly auto-detects common local LLM ports too, so just `lillycoder` often works)</code></pre>
+  <p>
+    hydra-llm handles model lifecycle (download, start/stop, system prompts,
+    persistent sessions, optional KDE Plasma widget). lillycoder is the
+    agent on top: file tools, shell tools, grep, permission gating. Use
+    them together, or use lillycoder with whatever local server you
+    already run.
   </p>
 
   <h2>Safety</h2>
