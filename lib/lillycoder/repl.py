@@ -42,6 +42,7 @@ slash commands:
   /setpersona -f <path>       load persona text from a file
   /setpersona <text...>       set persona inline to the given text
   /thoughts [on|off]          toggle showing the model's <think> tokens
+  /autocompact [on|off]       toggle automatic compaction at 90% context
 """
 
 # Window in which a second Ctrl+C is interpreted as "yes, really exit".
@@ -125,7 +126,8 @@ def run_repl(api_url: Optional[str] = None,
              model: Optional[str] = None,
              persona: str = "default",
              force: bool = False,
-             bypass_perms: bool = False) -> int:
+             bypass_perms: bool = False,
+             no_autocompact: bool = False) -> int:
     """Main entry. Resolves an endpoint (auto-discover, --api, or saved),
     then loops on user input until /exit."""
     console = Console()
@@ -146,6 +148,12 @@ def run_repl(api_url: Optional[str] = None,
             console.rule(style="grey39")
             cfg = _config.load()
             show_thoughts = bool(cfg.get("ui", {}).get("show_thoughts", False))
+            # Autocompact: --no-autocompact CLI flag wins; otherwise the
+            # persisted setting; otherwise on by default.
+            if no_autocompact:
+                autocompact = False
+            else:
+                autocompact = bool(cfg.get("ui", {}).get("autocompact", True))
             ctx_label = (
                 f"{ctx.window // 1024}k ctx" if ctx.window >= 1024
                 else f"{ctx.window} ctx"
@@ -270,6 +278,23 @@ def run_repl(api_url: Optional[str] = None,
                         ctx.refresh(messages)
                         console.print(f"[dim]✓ persona set ({new_label}, {len(system_prompt)} chars)[/dim]")
                         continue
+                    if cmd == "/autocompact":
+                        rest = user_input[len("/autocompact"):].strip().lower()
+                        if rest in ("on", "true", "1", "yes"):
+                            autocompact = True
+                        elif rest in ("off", "false", "0", "no"):
+                            autocompact = False
+                        elif rest == "":
+                            autocompact = not autocompact
+                        else:
+                            console.print("[yellow]usage: /autocompact [on|off][/yellow]")
+                            continue
+                        cfg = _config.load()
+                        cfg.setdefault("ui", {})["autocompact"] = autocompact
+                        _config.save(cfg)
+                        state = "on" if autocompact else "off"
+                        console.print(f"[dim]✓ autocompact {state}[/dim]")
+                        continue
                     if cmd == "/thoughts":
                         rest = user_input[len("/thoughts"):].strip().lower()
                         if rest in ("on", "true", "1", "yes"):
@@ -295,15 +320,22 @@ def run_repl(api_url: Optional[str] = None,
                     console.print(f"[yellow]unknown: {cmd} — try /help[/yellow]")
                     continue
 
-                # Auto-compact at 90%.
+                # Auto-compact at 90% (unless disabled).
                 if ctx.percent() >= 90:
-                    console.print(
-                        "[yellow]   context nearly full — auto-compacting before turn…[/yellow]"
-                    )
-                    try:
-                        ctx.compact(messages, system_prompt, client, model)
-                    except Exception as e:
-                        console.print(f"[red]   ✗ auto-compact failed: {e}[/red]")
+                    if autocompact:
+                        console.print(
+                            "[yellow]   context nearly full - auto-compacting before turn...[/yellow]"
+                        )
+                        try:
+                            ctx.compact(messages, system_prompt, client, model)
+                        except Exception as e:
+                            console.print(f"[red]   ✗ auto-compact failed: {e}[/red]")
+                    else:
+                        console.print(
+                            "[yellow]   ⚠ context >90% full and autocompact is off; "
+                            "the model may truncate. Use /compact to compact now, "
+                            "/autocompact on to re-enable.[/yellow]"
+                        )
 
                 # Chat turn - agent loop with tool dispatch.
                 messages.append({"role": "user", "content": user_input})

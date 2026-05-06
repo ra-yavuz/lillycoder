@@ -1,3 +1,14 @@
+lillycoder (0.1.5-1) unstable; urgency=low
+
+  * REPL: /autocompact [on|off] toggles automatic context compaction.
+    State is persisted in config.toml under [ui].autocompact. When off
+    and context goes past 90 percent, lillycoder warns instead of
+    compacting silently.
+  * CLI: --no-autocompact disables auto-compaction for the current
+    session (overrides the persisted setting).
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Wed, 06 May 2026 19:00:00 +0000
+
 lillycoder (0.1.4-1) unstable; urgency=low
 
   * REPL: end every assistant turn on a fresh line so the prompt no

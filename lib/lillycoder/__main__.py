@@ -62,6 +62,12 @@ def main() -> int:
         action="store_true",
         help="print version and exit",
     )
+    parser.add_argument(
+        "--no-autocompact",
+        action="store_true",
+        help="disable automatic context compaction at 90 percent fill "
+             "(overrides config; toggle live with /autocompact)",
+    )
     args = parser.parse_args()
 
     if args.version:
@@ -92,6 +98,7 @@ def main() -> int:
         persona=args.persona,
         force=args.force,
         bypass_perms=args.bypass_permissions,
+        no_autocompact=args.no_autocompact,
     )
 
 
