@@ -154,22 +154,81 @@ def _gate_tool_call(console: Console, name: str, args: dict,
     return False, "user declined"
 
 
+_THINK_OPEN = "<think>"
+_THINK_CLOSE = "</think>"
+
+
+def _emit_segment(console: Console, text: str, *, in_thought: bool,
+                   show_thoughts: bool) -> None:
+    """Render a chunk to the console. Thought segments are dimmed and only
+    shown when show_thoughts is True; visible content is always printed."""
+    if not text:
+        return
+    if in_thought:
+        if show_thoughts:
+            console.print(text, end="", style="grey50",
+                          highlight=False, markup=False)
+        return
+    console.print(text, end="", style="bright_white",
+                  highlight=False, markup=False)
+
+
+def _route_content_chunk(console: Console, chunk: str, state: dict,
+                          show_thoughts: bool) -> None:
+    """Split a content chunk on <think>/</think> markers and dispatch each
+    piece to the right renderer. State is mutated to track whether we're
+    currently inside a thought block across chunk boundaries."""
+    buf = state.get("carry", "") + chunk
+    state["carry"] = ""
+    while buf:
+        if state["in_thought"]:
+            idx = buf.find(_THINK_CLOSE)
+            if idx < 0:
+                # Whole buffer is thought; keep a trailing partial-tag tail
+                # in carry so a split "</thi" + "nk>" still matches.
+                tail = min(len(buf), len(_THINK_CLOSE) - 1)
+                _emit_segment(console, buf[:-tail] if tail else buf,
+                              in_thought=True, show_thoughts=show_thoughts)
+                state["carry"] = buf[-tail:] if tail else ""
+                return
+            _emit_segment(console, buf[:idx], in_thought=True,
+                          show_thoughts=show_thoughts)
+            buf = buf[idx + len(_THINK_CLOSE):]
+            state["in_thought"] = False
+        else:
+            idx = buf.find(_THINK_OPEN)
+            if idx < 0:
+                tail = min(len(buf), len(_THINK_OPEN) - 1)
+                _emit_segment(console, buf[:-tail] if tail else buf,
+                              in_thought=False, show_thoughts=show_thoughts)
+                state["carry"] = buf[-tail:] if tail else ""
+                return
+            _emit_segment(console, buf[:idx], in_thought=False,
+                          show_thoughts=show_thoughts)
+            buf = buf[idx + len(_THINK_OPEN):]
+            state["in_thought"] = True
+
+
 async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
-                                  messages: list[dict], console: Console
+                                  messages: list[dict], console: Console,
+                                  show_thoughts: bool = False
                                   ) -> tuple[str, list[dict]]:
     """Send one chat-completion request, stream content tokens to the
-    console, accumulate any tool calls. Returns (content_text, [tool_calls])."""
+    console, accumulate any tool calls. Returns (content_text, [tool_calls]).
+    Raises KeyboardInterrupt back to the caller if the user hits Ctrl+C
+    during the stream (caller wipes the spinner and resumes the REPL)."""
     payload = {
         "model": model.alias,
         "messages": messages,
         "tools": schemas_for_model(),
         "tool_choice": "auto",
         "stream": True,
-        "temperature": 0.5,   # lower than chat — we want decisive tool use
+        "temperature": 0.5,   # lower than chat - we want decisive tool use
     }
     full_content = ""
     accum_tools: dict[int, dict] = {}
     finish_reason = None
+    think_state = {"in_thought": False, "carry": ""}
 
     # Spinner shown while waiting for the model's first byte. Stopped as
     # soon as any delta (content or tool_call) arrives so streamed output
@@ -177,6 +236,8 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
     status = console.status("[dim]lilly is thinking...[/dim]", spinner="dots")
     status.start()
     spinner_active = True
+    interrupted = False
+    printed_any = False
 
     try:
         with client.stream("POST", "/chat/completions",
@@ -196,15 +257,41 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
                 if fr:
                     finish_reason = fr
                 content = delta.get("content")
+                # Some servers expose chain-of-thought as a separate field
+                # rather than inline <think> tags. Treat it as a thought
+                # segment - dim, hidden unless /thoughts is on.
+                reasoning = (delta.get("reasoning_content")
+                             or delta.get("reasoning"))
                 has_tool_delta = bool(delta.get("tool_calls"))
-                if (content or has_tool_delta) and spinner_active:
+                if (content or reasoning or has_tool_delta) and spinner_active:
                     status.stop()
                     spinner_active = False
+                if reasoning:
+                    if show_thoughts:
+                        printed_any = True
+                    _emit_segment(console, reasoning, in_thought=True,
+                                  show_thoughts=show_thoughts)
                 if content:
                     full_content += content
-                    console.print(content, end="", style="bright_white",
-                                  highlight=False, markup=False)
+                    # Only count visible content for the trailing newline.
+                    # If the chunk is purely thought, we skip newlining.
+                    if not (think_state["in_thought"]
+                            and "<think>" not in content
+                            and "</think>" not in content
+                            and not show_thoughts):
+                        printed_any = True
+                    _route_content_chunk(console, content, think_state,
+                                          show_thoughts)
                 _parse_tool_calls_from_chunk(d, accum_tools)
+    except KeyboardInterrupt:
+        interrupted = True
+        if spinner_active:
+            status.stop()
+            spinner_active = False
+        console.print("\n[yellow]   ⚠ interrupted[/yellow]")
+        # Re-raise so run_turn can stop iterating and the REPL returns
+        # to the prompt.
+        raise
     except httpx.HTTPError as e:
         if spinner_active:
             status.stop()
@@ -213,6 +300,11 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
     finally:
         if spinner_active:
             status.stop()
+        # Always end on a fresh line after streamed output so the next
+        # prompt or tool announcement starts cleanly. Avoid the double
+        # newline when nothing was printed (eg. tool-only response).
+        if printed_any and not interrupted:
+            console.print()
     if full_content:
         console.print()  # newline after streamed content
 
@@ -235,17 +327,36 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
     return full_content, tool_calls_out
 
 
+def _short_args(args: dict) -> str:
+    """One-line representation of a tool's args for the announce line."""
+    if not args:
+        return ""
+    parts = []
+    for k, v in args.items():
+        if isinstance(v, str):
+            shown = v if len(v) <= 40 else v[:37] + "..."
+            parts.append(f"{k}={shown!r}")
+        elif isinstance(v, (int, float, bool)) or v is None:
+            parts.append(f"{k}={v}")
+        else:
+            parts.append(f"{k}=<{type(v).__name__}>")
+    return ", ".join(parts)
+
+
 def run_turn(client: httpx.Client, model: ModelInfo,
              messages: list[dict], console: Console,
-             bypass_perms: bool, workdir: Path) -> None:
+             bypass_perms: bool, workdir: Path,
+             show_thoughts: bool = False) -> None:
     """Single user turn: may involve multiple model + tool iterations.
-    Mutates `messages` in place."""
+    Mutates `messages` in place. Raises KeyboardInterrupt back to the
+    caller if the user hits Ctrl+C during the turn."""
     import asyncio
 
     async def _go():
         for _ in range(MAX_TOOL_ITERATIONS):
             content, tool_calls = await _stream_one_completion(
                 client, model, messages, console,
+                show_thoughts=show_thoughts,
             )
             # Build assistant message; OpenAI shape requires content key
             # even when tool_calls present.
@@ -264,6 +375,17 @@ def run_turn(client: httpx.Client, model: ModelInfo,
             for tc in tool_calls:
                 name = tc["function"]["name"]
                 args = tc["_parsed_args"]
+                # Announce *before* dispatch so the user has something on
+                # screen while the tool runs (write_file/bash can take a
+                # while; before this line, the REPL looked frozen). The
+                # arg summary is user/model controlled and may contain
+                # brackets, so emit it as a separate plain segment.
+                console.print(f"[cyan]   ⏳ {name}[/cyan]", end="")
+                if args:
+                    console.print(f" ({_short_args(args)})",
+                                  markup=False, highlight=False, style="grey50")
+                else:
+                    console.print()
                 ok, reason = _gate_tool_call(console, name, args,
                                               bypass_perms, workdir)
                 if not ok:
@@ -289,4 +411,13 @@ def run_turn(client: httpx.Client, model: ModelInfo,
             # Loop back: model gets to read tool results and decide next.
         console.print("[yellow]   ⚠ hit max tool iterations, stopping[/yellow]")
 
-    asyncio.run(_go())
+    try:
+        asyncio.run(_go())
+    except KeyboardInterrupt:
+        # Append a synthetic assistant note so the conversation stays
+        # well-formed even though the model's own message was cut short.
+        messages.append({
+            "role": "assistant",
+            "content": "(interrupted by user)",
+        })
+        raise

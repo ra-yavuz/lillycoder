@@ -1,3 +1,24 @@
+lillycoder (0.1.4-1) unstable; urgency=low
+
+  * REPL: end every assistant turn on a fresh line so the prompt no
+    longer runs into lilly's last token.
+  * Agent: announce each tool call before dispatch ("⏳ name(args)")
+    instead of only logging the result, so long-running write/bash
+    calls no longer look hung.
+  * Reasoning tokens: render <think>...</think> segments and the
+    OpenAI-style delta.reasoning_content field as dim grey output.
+    Hidden by default; toggle with /thoughts (also accepts on/off),
+    persisted in config.toml under [ui].
+  * Ctrl+C now interrupts the current turn and returns to the prompt
+    instead of crashing out with a traceback. Two Ctrl+Cs within 2
+    seconds exit the session (Ctrl+D still exits immediately).
+  * Permission prompt: stop swallowing the option keys to Rich markup.
+    "[y]es / [n]o / [a]lways / [p]ath" now reads as "(y)es / (n)o /
+    (a)lways / (p)ath", and the call summary is printed without
+    markup parsing so paths/content with brackets render correctly.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Wed, 06 May 2026 18:30:00 +0000
+
 lillycoder (0.1.3-1) unstable; urgency=low
 
   * Context window is now read from the server instead of hardcoded to

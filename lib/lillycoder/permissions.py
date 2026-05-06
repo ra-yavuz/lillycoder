@@ -84,12 +84,16 @@ def ask(console: Console, tool_name: str, summary: str,
         return True
 
     console.print()
-    console.print(
-        f"[bold yellow]🦊 lilly wants to:[/bold yellow] {tool_name}({summary})"
-    )
-    options = "[y]es  [n]o  [a]lways for this tool"
+    # The header has rich tags we want interpreted; the call summary is
+    # arbitrary tool args (paths, content excerpts) that must NOT be
+    # parsed as markup, so print it as a separate plain segment.
+    console.print("[bold yellow]🦊 lilly wants to:[/bold yellow] ", end="")
+    console.print(f"{tool_name}({summary})", markup=False, highlight=False)
+    # Square brackets in option labels would be eaten by Rich markup
+    # (turning "[y]es" into nothing). Use parens for the keys instead.
+    options = "(y)es  (n)o  (a)lways for this tool"
     if target_path:
-        options += "  [p]ath: always for this exact target"
+        options += "  (p)ath: always for this exact target"
     console.print(f"   {options}")
     while True:
         try:

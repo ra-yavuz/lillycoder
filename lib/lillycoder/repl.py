@@ -19,7 +19,10 @@ from prompt_toolkit.history import FileHistory
 from rich.console import Console
 from rich.markdown import Markdown
 
+import time
+
 from .agent import run_turn
+from . import config as _config
 from .config import load_persona, list_personas
 from .context import ContextTracker
 from .endpoint import acquire, ModelInfo
@@ -29,7 +32,7 @@ from .tools.registry import all_tools
 SLASH_HELP = """
 slash commands:
   /help                       this message
-  /exit                       leave (also: ctrl+d)
+  /exit                       leave (also: ctrl+d, or ctrl+c twice)
   /clear                      reset conversation history this session
   /compact                    (placeholder - autocompact lands in step 7)
   /tools                      list available tools (lands in step 4+)
@@ -38,7 +41,11 @@ slash commands:
   /setpersona <name>          switch to a saved persona by name
   /setpersona -f <path>       load persona text from a file
   /setpersona <text...>       set persona inline to the given text
+  /thoughts [on|off]          toggle showing the model's <think> tokens
 """
+
+# Window in which a second Ctrl+C is interpreted as "yes, really exit".
+_DOUBLE_INTERRUPT_S = 2.0
 
 
 def _history_path(workdir: Path) -> Path:
@@ -137,6 +144,8 @@ def run_repl(api_url: Optional[str] = None,
             ctx.refresh(messages)
 
             console.rule(style="grey39")
+            cfg = _config.load()
+            show_thoughts = bool(cfg.get("ui", {}).get("show_thoughts", False))
             ctx_label = (
                 f"{ctx.window // 1024}k ctx" if ctx.window >= 1024
                 else f"{ctx.window} ctx"
@@ -155,6 +164,7 @@ def run_repl(api_url: Optional[str] = None,
             )
             console.rule(style="grey39")
 
+            last_interrupt = 0.0
             while True:
                 # REPL prompt shows live context usage.
                 ctx.refresh(messages)
@@ -167,9 +177,24 @@ def run_repl(api_url: Optional[str] = None,
                 )
                 try:
                     user_input = session.prompt(prompt_html)
-                except (EOFError, KeyboardInterrupt):
+                except EOFError:
+                    # Ctrl+D - definite exit.
                     console.print()
                     break
+                except KeyboardInterrupt:
+                    # Ctrl+C at the prompt: clear line and stay. A second
+                    # Ctrl+C within the window confirms exit.
+                    now = time.monotonic()
+                    if now - last_interrupt < _DOUBLE_INTERRUPT_S:
+                        console.print()
+                        break
+                    last_interrupt = now
+                    console.print(
+                        "[dim]   (ctrl+c again within 2s to exit, or /exit)[/dim]"
+                    )
+                    continue
+                # Successful read: forget any prior single-tap.
+                last_interrupt = 0.0
 
                 user_input = user_input.strip()
                 if not user_input:
@@ -245,6 +270,23 @@ def run_repl(api_url: Optional[str] = None,
                         ctx.refresh(messages)
                         console.print(f"[dim]✓ persona set ({new_label}, {len(system_prompt)} chars)[/dim]")
                         continue
+                    if cmd == "/thoughts":
+                        rest = user_input[len("/thoughts"):].strip().lower()
+                        if rest in ("on", "true", "1", "yes"):
+                            show_thoughts = True
+                        elif rest in ("off", "false", "0", "no"):
+                            show_thoughts = False
+                        elif rest == "":
+                            show_thoughts = not show_thoughts
+                        else:
+                            console.print("[yellow]usage: /thoughts [on|off][/yellow]")
+                            continue
+                        cfg = _config.load()
+                        cfg.setdefault("ui", {})["show_thoughts"] = show_thoughts
+                        _config.save(cfg)
+                        state = "on" if show_thoughts else "off"
+                        console.print(f"[dim]✓ thoughts {state}[/dim]")
+                        continue
                     if cmd == "/tools":
                         for t in all_tools():
                             tag = "[red]mut[/red]" if t.mutating else "[green]ro[/green]"
@@ -263,15 +305,22 @@ def run_repl(api_url: Optional[str] = None,
                     except Exception as e:
                         console.print(f"[red]   ✗ auto-compact failed: {e}[/red]")
 
-                # Chat turn — agent loop with tool dispatch.
+                # Chat turn - agent loop with tool dispatch.
                 messages.append({"role": "user", "content": user_input})
                 _append_history(history_file, "user", user_input)
                 console.print()  # blank line before reply
-                run_turn(client, model, messages, console,
-                         bypass_perms=bypass_perms, workdir=workdir)
+                try:
+                    run_turn(client, model, messages, console,
+                             bypass_perms=bypass_perms, workdir=workdir,
+                             show_thoughts=show_thoughts)
+                except KeyboardInterrupt:
+                    # Turn was cut short. Stay in the REPL; reset the
+                    # double-tap window so the same Ctrl+C that stopped
+                    # the model doesn't also pre-arm an exit.
+                    last_interrupt = 0.0
                 # Persist any new assistant + tool messages from this turn.
                 # (We re-write a slim version that stores only chat
-                # messages, not tool-call internals — those are session-local.)
+                # messages, not tool-call internals - those are session-local.)
                 _persist_assistant_msgs(history_file, messages)
                 console.print()
 
