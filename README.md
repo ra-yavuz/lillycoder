@@ -100,13 +100,17 @@ sudo apt update
 sudo apt install lillycoder
 ```
 
-### From source (any Linux)
+### From source (any Linux, also macOS via pip)
 
 ```sh
 git clone https://github.com/ra-yavuz/lillycoder.git
 cd lillycoder
 pip install --user -e .
 ```
+
+## Platform support
+
+Tested on **Ubuntu (Linux only)**. Should also work on **WSL2** Ubuntu / Debian (it is a Linux distro, the apt path applies). On **macOS**, the `.deb` and `apt install` paths do not apply, but the from-source `pip install --user -e .` path is expected to work because the dependencies (`httpx`, `prompt_toolkit`, `rich`, `pydantic`) are all cross-platform and lillycoder shells out to standard POSIX tools that exist on Darwin. macOS support is not regularly tested by the author, so if you hit a portability issue please open an issue.
 
 ## Quick start
 

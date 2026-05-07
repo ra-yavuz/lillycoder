@@ -244,10 +244,24 @@ echo "deb [signed-by=/etc/apt/keyrings/ra-yavuz.gpg] https://ra-yavuz.github.io/
 sudo apt update
 sudo apt install lillycoder</code></pre>
 
-  <h2>From source (any Linux)</h2>
+  <h2>From source (any Linux, also macOS via pip)</h2>
 <pre><code>git clone https://github.com/ra-yavuz/lillycoder.git
 cd lillycoder
 pip install --user -e .</code></pre>
+
+  <h2>Platform support</h2>
+  <p>
+    Tested on <strong>Ubuntu (Linux only)</strong>. Should also work on
+    <strong>WSL2</strong> Ubuntu / Debian (it is a Linux distro, the apt
+    path applies). On <strong>macOS</strong>, the <code>.deb</code> and
+    <code>apt install</code> paths do not apply, but the from-source
+    <code>pip install --user -e .</code> path is expected to work because
+    the dependencies (<code>httpx</code>, <code>prompt_toolkit</code>,
+    <code>rich</code>, <code>pydantic</code>) are all cross-platform and
+    lillycoder shells out to standard POSIX tools that exist on Darwin.
+    macOS support is not regularly tested by the author, so if you hit a
+    portability issue please open an issue.
+  </p>
 
   <h2>Quick start</h2>
   <p>
