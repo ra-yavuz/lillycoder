@@ -51,13 +51,29 @@ For the server side, see [hydra-llm](https://ra-yavuz.github.io/hydra-llm/) (sib
 
 ## Install
 
-### One-liner (Debian / Ubuntu)
+### One line (Debian / Ubuntu)
+
+Sets up the signed `ra-yavuz` apt repo if not already added, refreshes the package index, and installs lillycoder. Idempotent, safe to re-run:
+
+```sh
+sudo bash -c 'set -e; install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://ra-yavuz.github.io/apt/pubkey.gpg -o /etc/apt/keyrings/ra-yavuz.gpg && echo "deb [signed-by=/etc/apt/keyrings/ra-yavuz.gpg] https://ra-yavuz.github.io/apt stable main" > /etc/apt/sources.list.d/ra-yavuz.list && apt update && apt install -y lillycoder'
+```
+
+If you already added the `ra-yavuz` apt repo earlier, all you need is:
+
+```sh
+sudo apt update && sudo apt install lillycoder
+```
+
+The `sudo apt update` step is required: without it apt will not see new packages or new versions.
+
+### One line via the bundled installer script
+
+Equivalent to the above, with extra prerequisite checks and a friendlier output summary:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ra-yavuz/lillycoder/main/scripts/get.sh | sudo bash
 ```
-
-This adds the `ra-yavuz` apt repository (signing key + sources list), then `apt install lillycoder`. Re-running it is safe.
 
 If you would rather read the script first (recommended for any `curl | bash`):
 
@@ -67,16 +83,19 @@ less get.sh
 sudo bash get.sh
 ```
 
-### Manual apt steps (Debian / Ubuntu)
-
-If you prefer to wire up the apt repo by hand:
+### Step by step (manual repo setup)
 
 ```sh
+# 1. Trust the signing key
 sudo install -d -m 0755 /etc/apt/keyrings
 curl -fsSL https://ra-yavuz.github.io/apt/pubkey.gpg \
   | sudo tee /etc/apt/keyrings/ra-yavuz.gpg >/dev/null
+
+# 2. Add the apt source
 echo "deb [signed-by=/etc/apt/keyrings/ra-yavuz.gpg] https://ra-yavuz.github.io/apt stable main" \
   | sudo tee /etc/apt/sources.list.d/ra-yavuz.list
+
+# 3. Refresh the package index, then install
 sudo apt update
 sudo apt install lillycoder
 ```
