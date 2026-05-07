@@ -1,3 +1,34 @@
+lillycoder (0.1.8-1) unstable; urgency=low
+
+  * Slash commands collapsed under one /persona namespace. /persona,
+    /persona list, /persona show <name>, /persona load <name>,
+    /persona add, /persona copy, /persona remove, /persona diff,
+    /persona active, /persona evolve. The legacy commands
+    (/personas, /setpersona, /personalities, /persona-active,
+    /persona-copy, /persona-evolve) all still work and route through
+    the new namespace, with a one-shot deprecation tip the first time
+    each is used in a session.
+  * /persona list now shows the first non-empty line of every
+    persona, truncated to 70 chars, so you can tell what each one
+    sounds like without loading it. Origin tags (bundled vs user)
+    and the (current) marker are kept.
+  * Reasoning models that emit OpenAI Harmony channel markers
+    (<|channel|>thought<|message|>...<|end|>) used in some recent
+    gemma/qwen3-MoE/deepseek-r1 builds are now parsed correctly.
+    Channel control tokens are stripped from the visible stream
+    instead of leaking; non-final/non-response channels are routed
+    as thoughts (hidden unless /thoughts on).
+  * Thought segments now render in italic dim grey instead of plain
+    dim, so when /thoughts on is enabled they are visually distinct
+    from real assistant content.
+  * Tool registry unchanged: the model-facing tool names
+    (set_persona, list_personas, add_persona, clone_persona,
+    set_active_persona, set_evolve, plus the file/shell tools)
+    keep working exactly as before. Verified end-to-end against a
+    real LLM endpoint.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Thu, 07 May 2026 05:00:00 +0000
+
 lillycoder (0.1.7-1) unstable; urgency=low
 
   * Six bundled personas instead of one: default (kid coder), tsundere,

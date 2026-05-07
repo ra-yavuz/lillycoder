@@ -158,28 +158,138 @@ def _gate_tool_call(console: Console, name: str, args: dict,
 _THINK_OPEN = "<think>"
 _THINK_CLOSE = "</think>"
 
+# Harmony / OpenAI-channel control-token markers. Some recent local
+# models (gemma uncensored MoE, qwen3-MoE, deepseek-r1 derivatives) emit
+# their reasoning wrapped in <|channel|>NAME<|message|>...<|end|>
+# blocks instead of (or alongside) <think>...</think>. We treat any
+# channel that isn't "final"/"response" as thought, hide its content
+# unless /thoughts on, and strip the control tokens themselves so they
+# never leak to the user.
+_HARMONY_VISIBLE_CHANNELS = {"final", "response"}
+
 
 def _emit_segment(console: Console, text: str, *, in_thought: bool,
                    show_thoughts: bool) -> None:
-    """Render a chunk to the console. Thought segments are dimmed and only
-    shown when show_thoughts is True; visible content is always printed."""
+    """Render a chunk to the console. Thought segments are styled
+    distinctly (italic dim) and only shown when show_thoughts is True;
+    visible content is always printed."""
     if not text:
         return
     if in_thought:
         if show_thoughts:
-            console.print(text, end="", style="grey50",
+            console.print(text, end="", style="italic grey50",
                           highlight=False, markup=False)
         return
     console.print(text, end="", style="bright_white",
                   highlight=False, markup=False)
 
 
+def _strip_harmony_tokens(buf: str, state: dict) -> str:
+    """Remove harmony channel/message/end control tokens from `buf`,
+    and silently consume the channel-name plaintext that follows
+    <|channel|>. Mutates state['in_thought'] based on which channel we
+    are in.
+
+    Harmony shape:
+        <|channel|>analysis<|message|>...thought body...<|end|>
+        <|channel|>final<|message|>...visible body...<|end|>
+
+    State machine:
+        normal       -> see `<|channel|>` -> AWAIT_CHANNEL_NAME
+        AWAIT_CHANNEL_NAME -> next non-control text is the channel name
+                              (we strip it). See `<|message|>` ->
+                              IN_BODY (visible if channel is
+                              final/response, thought otherwise)
+        IN_BODY      -> see `<|end|>`/`<|return|>` -> normal
+
+    Partial tokens at the end of `buf` are kept in
+    state['harmony_carry'] and re-prepended on the next call.
+    Returns the cleaned text, ready to be fed into
+    _route_content_chunk for <think>-tag handling on top.
+    """
+    text = state.get("harmony_carry", "") + buf
+    state["harmony_carry"] = ""
+    out: list[str] = []
+    i = 0
+    n = len(text)
+
+    # Three modes:
+    #   "normal"        -- between channel blocks (no body active)
+    #   "channel_name"  -- inside <|channel|>...<|message|>, swallow text
+    #                       as the channel name
+    #   "in_body"       -- inside a body, plaintext is real content;
+    #                       state['harmony_in_thought_body'] tells us
+    #                       whether to wrap it in synthetic <think> tags
+    mode = state.get("harmony_mode", "normal")
+
+    def open_thought():
+        if not state.get("harmony_in_thought_body"):
+            out.append(_THINK_OPEN)
+            state["harmony_in_thought_body"] = True
+
+    def close_thought():
+        if state.get("harmony_in_thought_body"):
+            out.append(_THINK_CLOSE)
+            state["harmony_in_thought_body"] = False
+
+    while i < n:
+        start = text.find("<|", i)
+        if start < 0:
+            # Tail with no further control tokens.
+            tail = text[i:]
+            if mode == "channel_name":
+                state["harmony_pending_name"] = (
+                    state.get("harmony_pending_name", "") + tail
+                )
+            else:
+                out.append(tail)
+            break
+
+        chunk_pre = text[i:start]
+        if chunk_pre:
+            if mode == "channel_name":
+                state["harmony_pending_name"] = (
+                    state.get("harmony_pending_name", "") + chunk_pre
+                )
+            else:
+                out.append(chunk_pre)
+
+        end = text.find("|>", start + 2)
+        if end < 0:
+            state["harmony_carry"] = text[start:]
+            break
+        token = text[start + 2:end].strip().lower()
+
+        if token == "channel":
+            close_thought()
+            mode = "channel_name"
+            state["harmony_pending_name"] = ""
+        elif token == "message":
+            name = state.get("harmony_pending_name", "").strip().lower()
+            state["harmony_pending_name"] = ""
+            if name in _HARMONY_VISIBLE_CHANNELS:
+                close_thought()
+            else:
+                open_thought()
+            mode = "in_body"
+        elif token in ("end", "return"):
+            close_thought()
+            mode = "normal"
+        # Other tokens (start/system/user/assistant/...) swallowed silently.
+        i = end + 2
+
+    state["harmony_mode"] = mode
+    return "".join(out)
+
+
 def _route_content_chunk(console: Console, chunk: str, state: dict,
                           show_thoughts: bool) -> None:
-    """Split a content chunk on <think>/</think> markers and dispatch each
-    piece to the right renderer. State is mutated to track whether we're
-    currently inside a thought block across chunk boundaries."""
-    buf = state.get("carry", "") + chunk
+    """Strip harmony control tokens, then split the remaining text on
+    <think>/</think> markers and dispatch each piece to the right
+    renderer. State is mutated to track whether we're currently inside
+    a thought block across chunk boundaries."""
+    buf = _strip_harmony_tokens(chunk, state)
+    buf = state.get("carry", "") + buf
     state["carry"] = ""
     while buf:
         if state["in_thought"]:
@@ -266,7 +376,14 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
     full_content = ""
     accum_tools: dict[int, dict] = {}
     finish_reason = None
-    think_state = {"in_thought": False, "carry": ""}
+    think_state = {
+        "in_thought": False,
+        "carry": "",
+        "harmony_carry": "",
+        "harmony_mode": "normal",
+        "harmony_pending_name": "",
+        "harmony_in_thought_body": False,
+    }
 
     # Spinner shown while waiting for the model's first byte. Stopped as
     # soon as any delta (content or tool_call) arrives so streamed output
