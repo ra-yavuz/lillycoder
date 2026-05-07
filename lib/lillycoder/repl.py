@@ -37,6 +37,7 @@ from .config import (
 )
 from .context import ContextTracker
 from .endpoint import acquire
+from .pinned import run_with_pinned_toolbar
 from .sessions import SessionStore, append_message, load_messages
 from .tools.registry import all_tools
 from .tools import persona as persona_tool
@@ -1039,10 +1040,18 @@ def run_repl(api_url: Optional[str] = None,
                 append_message(active, "user", user_input)
                 console.print()  # blank line before reply
                 try:
-                    run_turn(client, model, messages, console,
-                             bypass_perms=bypass_perms, workdir=workdir,
-                             show_thoughts=show_thoughts,
-                             max_tokens=max_tokens)
+                    def _do_turn() -> None:
+                        run_turn(client, model, messages, console,
+                                 bypass_perms=bypass_perms, workdir=workdir,
+                                 show_thoughts=show_thoughts,
+                                 max_tokens=max_tokens)
+                    # When LILLY_TOOLBAR_PIN=1 (and the terminal looks
+                    # capable), run_with_pinned_toolbar holds an async
+                    # prompt_toolkit Application around the turn so the
+                    # bottom toolbar stays pinned through streaming
+                    # output. Default off; falls back to plain
+                    # _do_turn() otherwise.
+                    run_with_pinned_toolbar(_do_turn, _bottom_toolbar)
                 except KeyboardInterrupt:
                     # Turn was cut short. Stay in the REPL; reset the
                     # double-tap window so the same Ctrl+C that stopped

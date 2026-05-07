@@ -1,3 +1,25 @@
+lillycoder (0.2.1-1) unstable; urgency=low
+
+  * Opt-in pinned bottom toolbar during model turns. Set
+    LILLY_TOOLBAR_PIN=1 in the environment to enable. When on, the
+    toolbar (model + ctx + persona + max_tokens + flags) stays
+    anchored at the bottom of the terminal while Lilly streams a
+    response or runs a tool, instead of scrolling off as output
+    flows up.
+  * Implementation: spawn an async prompt_toolkit Application that
+    owns only the bottom row, and pipe the agent turn through
+    patch_stdout so writes appear above the toolbar. The turn runs
+    in a worker thread inside the same event loop. When the turn
+    finishes the Application exits and we drop back to the normal
+    prompt loop. Default off; falls back automatically on dumb
+    terminals, screen, or nested tmux. Override the auto-fallback
+    with LILLY_TOOLBAR_PIN_FORCE=1.
+  * No change to the slash commands, persona system, sessions, or
+    tool registry. Persona tools and /session round-trip continue to
+    work whether pinning is on or off.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Thu, 07 May 2026 11:00:00 +0000
+
 lillycoder (0.2.0-1) unstable; urgency=low
 
   * Per-folder conversation sessions. Each cwd now keeps a
