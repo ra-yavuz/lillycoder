@@ -37,6 +37,7 @@ from .config import (
 )
 from .context import ContextTracker
 from .endpoint import acquire
+from .sessions import SessionStore, append_message, load_messages
 from .tools.registry import all_tools
 from .tools import persona as persona_tool
 from .tools import persona_admin
@@ -46,9 +47,14 @@ SLASH_HELP = """
 slash commands:
   /help                       this message
   /exit                       leave (also: ctrl+d, or ctrl+c twice)
-  /clear                      reset conversation history this session
+  /clear                      start a new session (old one stays in /session list)
   /compact                    summarise older history into a system note
   /tools                      list tools the model can call
+
+sessions (per folder, stored in .lillycoder/sessions/):
+  /session                    list sessions in this folder (alias: /session list)
+  /session new [label]        start a fresh session, optional label
+  /session load <id|index|label>   resume a saved session
 
 persona system (unified namespace, all subcommands of /persona):
   /persona                    show the current persona text
@@ -82,41 +88,11 @@ deprecated (still work, but use the /persona namespace instead):
 _DOUBLE_INTERRUPT_S = 2.0
 
 
-def _history_path(workdir: Path) -> Path:
-    """Per-project history file under .lillycoder/history.jsonl"""
-    d = workdir / ".lillycoder"
-    d.mkdir(exist_ok=True)
-    return d / "history.jsonl"
-
-
 def _line_history_path() -> Path:
     """Cross-project prompt-toolkit input line history."""
     p = Path.home() / ".config" / "lillycoder"
     p.mkdir(parents=True, exist_ok=True)
     return p / "input_history"
-
-
-def _load_messages(history_file: Path, system_prompt: str) -> list[dict]:
-    """Load any prior session for this folder, prepending the system prompt."""
-    msgs = [{"role": "system", "content": system_prompt}]
-    if not history_file.exists():
-        return msgs
-    for line in history_file.read_text().splitlines():
-        if not line.strip():
-            continue
-        try:
-            d = json.loads(line)
-            if d.get("role") in ("user", "assistant"):
-                msgs.append({"role": d["role"], "content": d["content"]})
-        except json.JSONDecodeError:
-            continue
-    return msgs
-
-
-def _append_history(history_file: Path, role: str, content: str) -> None:
-    with history_file.open("a") as f:
-        f.write(json.dumps({"role": role, "content": content},
-                           ensure_ascii=False) + "\n")
 
 
 def run_repl(api_url: Optional[str] = None,
@@ -148,8 +124,15 @@ def run_repl(api_url: Optional[str] = None,
                 else:
                     persona = "default"
             system_prompt = load_persona(persona)
-            history_file = _history_path(workdir)
-            messages = _load_messages(history_file, system_prompt)
+            store = SessionStore(workdir)
+            store.ensure()
+            git_msg = store.git_excluded_message()
+            if git_msg:
+                console.print(f"[dim]   ✨ {git_msg}[/dim]")
+            # Lazy: a session file is only created the first time the
+            # user sends a message in a fresh folder. Until then,
+            # active() is None and we just have the system prompt.
+            messages = load_messages(store.active(), system_prompt)
             ctx = ContextTracker(model_window=model.context_window or 8192)
             ctx.refresh(messages)
 
@@ -340,8 +323,10 @@ def run_repl(api_url: Optional[str] = None,
                 # A long toolbar that wraps to two lines is the usual
                 # cause of the toolbar "disappearing" while typing.
                 mt_lbl = "auto" if max_tokens is None else str(max_tokens)
+                project = store.project_label()
                 return HTML(
                     f"<ansimagenta>🦊</ansimagenta> "
+                    f"<ansicyan>{project}</ansicyan> · "
                     f"<ansicyan>{model.alias}</ansicyan> · "
                     f"<{pct_color}>{pct:.0f}% of {ctx_lbl}</{pct_color}> · "
                     f"{persona} · "
@@ -453,10 +438,15 @@ def run_repl(api_url: Optional[str] = None,
                         cmd = user_input.split(None, 1)[0].lower()
 
                     if cmd == "/clear":
+                        # Start a new session. The previous one stays
+                        # on disk and is reachable via /session list.
+                        new_path = store.new(label="cleared")
                         messages = [{"role": "system", "content": system_prompt}]
-                        history_file.write_text("")
                         ctx.refresh(messages)
-                        console.print("[dim]✓ session cleared[/dim]")
+                        console.print(
+                            f"[dim]✓ new session started ({new_path.name}); "
+                            f"previous remains in /session list[/dim]"
+                        )
                         continue
                     if cmd == "/compact":
                         try:
@@ -958,7 +948,67 @@ def run_repl(api_url: Optional[str] = None,
                             tag = "[red]mut[/red]" if t.mutating else "[green]ro[/green]"
                             console.print(f"  {tag} [cyan]{t.name}[/cyan]  {t.description}")
                         continue
-                    console.print(f"[yellow]unknown: {cmd} — try /help[/yellow]")
+                    if cmd == "/session":
+                        rest = user_input[len("/session"):].strip()
+                        parts = rest.split(None, 1)
+                        sub = parts[0].lower() if parts else "list"
+                        tail = parts[1] if len(parts) > 1 else ""
+                        if sub in ("list", "ls", ""):
+                            sessions = store.list()
+                            if not sessions:
+                                console.print("[dim]no sessions yet[/dim]")
+                                continue
+                            for i, s in enumerate(sessions, 1):
+                                marker = (
+                                    " [cyan](active)[/cyan]" if s.is_active else ""
+                                )
+                                ts = s.timestamp or "?"
+                                console.print(
+                                    f"  [bold]{i}[/bold]. {ts} "
+                                    f"[cyan]{s.label}[/cyan]{marker} "
+                                    f"[dim]({s.turn_count} turns, "
+                                    f"{s.id})[/dim]"
+                                )
+                            continue
+                        if sub == "new":
+                            label = tail.strip() or None
+                            new_path = store.new(label=label)
+                            messages = [{
+                                "role": "system", "content": system_prompt,
+                            }]
+                            ctx.refresh(messages)
+                            console.print(
+                                f"[dim]✓ new session: "
+                                f"[cyan]{new_path.name}[/cyan][/dim]"
+                            )
+                            continue
+                        if sub == "load":
+                            ident = tail.strip()
+                            if not ident:
+                                console.print(
+                                    "[yellow]usage: /session load <id|index|label>[/yellow]"
+                                )
+                                continue
+                            target = store.resolve(ident)
+                            if target is None:
+                                console.print(
+                                    f"[red]✗ no session matches: {ident}[/red]"
+                                )
+                                continue
+                            store.set_active(target)
+                            messages = load_messages(target, system_prompt)
+                            ctx.refresh(messages)
+                            console.print(
+                                f"[dim]✓ loaded session: "
+                                f"[cyan]{target.name}[/cyan] "
+                                f"({len(messages)-1} messages)[/dim]"
+                            )
+                            continue
+                        console.print(
+                            "[yellow]usage: /session [list|new [label]|load <id|index|label>][/yellow]"
+                        )
+                        continue
+                    console.print(f"[yellow]unknown: {cmd} - try /help[/yellow]")
                     continue
 
                 # Auto-compact at 90% (unless disabled).
@@ -980,7 +1030,13 @@ def run_repl(api_url: Optional[str] = None,
 
                 # Chat turn - agent loop with tool dispatch.
                 messages.append({"role": "user", "content": user_input})
-                _append_history(history_file, "user", user_input)
+                # Lazy-create a session file on first user message so a
+                # /exit before any prompt doesn't litter the folder.
+                active = store.active()
+                if active is None or not active.exists():
+                    label_seed = user_input.strip().splitlines()[0]
+                    active = store.new(label=label_seed[:40])
+                append_message(active, "user", user_input)
                 console.print()  # blank line before reply
                 try:
                     run_turn(client, model, messages, console,
@@ -995,7 +1051,7 @@ def run_repl(api_url: Optional[str] = None,
                 # Persist any new assistant + tool messages from this turn.
                 # (We re-write a slim version that stores only chat
                 # messages, not tool-call internals - those are session-local.)
-                _persist_assistant_msgs(history_file, messages)
+                _persist_assistant_msgs(active, messages)
                 console.print()
 
             return 0
@@ -1004,10 +1060,10 @@ def run_repl(api_url: Optional[str] = None,
         return 1
 
 
-def _persist_assistant_msgs(history_file: Path, messages: list[dict]) -> None:
+def _persist_assistant_msgs(session_path: Path, messages: list[dict]) -> None:
     """Append only the most recent assistant content message (no tool internals)."""
     # Find the latest assistant message with non-empty string content.
     for m in reversed(messages):
         if m.get("role") == "assistant" and isinstance(m.get("content"), str) and m["content"]:
-            _append_history(history_file, "assistant", m["content"])
+            append_message(session_path, "assistant", m["content"])
             return

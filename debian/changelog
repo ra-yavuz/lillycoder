@@ -1,3 +1,28 @@
+lillycoder (0.2.0-1) unstable; urgency=low
+
+  * Per-folder conversation sessions. Each cwd now keeps a
+    .lillycoder/sessions/ directory with one .jsonl file per session;
+    the active session is recorded in .lillycoder/state.json. New
+    /session command group: /session list, /session new [label],
+    /session load <id|index|label>. Existing single-file
+    .lillycoder/history.jsonl is migrated automatically on first
+    launch under 0.2.0 (becomes sessions/<timestamp>-legacy.jsonl).
+  * /clear no longer destroys history. It starts a fresh session and
+    leaves the previous one reachable through /session list, so you
+    can scrub a derailed conversation without losing earlier work.
+  * When cwd is inside a git repo, lillycoder adds **/.lillycoder/ to
+    .git/info/exclude exactly once. This is git's local-only ignore
+    file (NOT the tracked .gitignore), so collaborators are not
+    affected. A one-line "✨ hid .lillycoder/ via ..." note is
+    printed at startup the first time it happens; idempotent on
+    every subsequent run.
+  * Bottom toolbar now shows a project label
+    (<repo-name>/<relative-path> when inside a git repo, project
+    marker root otherwise, basename of cwd as a fallback) so you can
+    tell which folder Lilly is in when you have several open.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Thu, 07 May 2026 09:00:00 +0000
+
 lillycoder (0.1.8-1) unstable; urgency=low
 
   * Slash commands collapsed under one /persona namespace. /persona,
