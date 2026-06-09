@@ -29,23 +29,23 @@ class SafetyVerdict:
 # Patterns matched against a normalised single-line command string.
 _DENY_RE = [
     (re.compile(r"\bsudo\b"),
-     "uses sudo — root operations are blocked"),
+     "uses sudo, root operations are blocked"),
     (re.compile(r"\bdoas\b"),
-     "uses doas — root operations are blocked"),
+     "uses doas, root operations are blocked"),
     (re.compile(r"\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+(/|~|\$HOME|\${HOME})(\s|$|/[^a-zA-Z0-9_])"),
-     "rm -rf against /, ~, or $HOME — refused"),
+     "rm -rf against /, ~, or $HOME, refused"),
     (re.compile(r"\bmkfs\."),
-     "mkfs — filesystem creation is blocked"),
+     "mkfs, filesystem creation is blocked"),
     (re.compile(r"\bdd\b[^|]*\bof=/dev/"),
-     "dd writing to a device — blocked"),
+     "dd writing to a device, blocked"),
     (re.compile(r"\bchmod\s+-[a-zA-Z]*R[^\s]*\s+(/|~|\$HOME|\${HOME})(\s|$|/[^a-zA-Z0-9_])"),
-     "recursive chmod against /, ~, or $HOME — blocked"),
+     "recursive chmod against /, ~, or $HOME, blocked"),
     (re.compile(r"\bchown\s+-[a-zA-Z]*R[^\s]*\s+\S+\s+(/|~|\$HOME|\${HOME})(\s|$|/[^a-zA-Z0-9_])"),
-     "recursive chown against /, ~, or $HOME — blocked"),
+     "recursive chown against /, ~, or $HOME, blocked"),
     (re.compile(r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:"),
-     "fork bomb pattern — blocked"),
+     "fork bomb pattern, blocked"),
     (re.compile(r"\bshutdown\b|\breboot\b|\bhalt\b|\bpoweroff\b"),
-     "shutdown/reboot — blocked"),
+     "shutdown/reboot, blocked"),
 ]
 
 

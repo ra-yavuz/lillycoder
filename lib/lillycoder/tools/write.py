@@ -1,4 +1,4 @@
-"""write_file tool — create/overwrite a file. Diff preview gated."""
+"""write_file tool, create/overwrite a file. Diff preview gated."""
 from __future__ import annotations
 
 import difflib

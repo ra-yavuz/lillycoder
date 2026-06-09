@@ -1,4 +1,4 @@
-"""bash tool — run a shell command.
+"""bash tool, run a shell command.
 
 Two modes:
   - safe subset: stdin-free read-only commands (git status, ls, cat,
@@ -37,7 +37,7 @@ def _is_safe(cmd: str) -> bool:
     head = parts[0]
     if head not in _SAFE_PREFIXES:
         return False
-    # Disallow git push/pull/commit etc — those mutate.
+    # Disallow git push/pull/commit etc, those mutate.
     if head == "git" and len(parts) > 1 and parts[1] in {
         "push", "pull", "commit", "merge", "rebase", "reset", "checkout",
         "branch", "rm", "mv", "add", "stash", "tag", "fetch",

@@ -1,4 +1,4 @@
-"""read_file tool — read a file from disk and return its content."""
+"""read_file tool, read a file from disk and return its content."""
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,4 +1,4 @@
-"""rm tool — delete a file or directory.
+"""rm tool, delete a file or directory.
 
 Recursion through directories must be explicitly requested. Even then,
 the safety classifier still rejects roots like /, ~, $HOME.

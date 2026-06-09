@@ -1,4 +1,4 @@
-"""mkdir tool — create directory (parents as needed)."""
+"""mkdir tool, create directory (parents as needed)."""
 from __future__ import annotations
 
 from pathlib import Path

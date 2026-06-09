@@ -1,6 +1,6 @@
 """Context window tracker + auto-compact.
 
-Token estimation is rough (chars/4 heuristic) — good enough to display a
+Token estimation is rough (chars/4 heuristic), good enough to display a
 percentage indicator and trigger compaction near the limit. We don't have
 a real tokeniser available without pulling in tiktoken/transformers, both
 of which inflate install size.
@@ -100,7 +100,7 @@ class ContextTracker:
             "role": "system",
             "content": (
                 "[earlier conversation summary]\n" + summary +
-                "\n[end summary — recent turns follow]"
+                "\n[end summary, recent turns follow]"
             ),
         }] + tail
         messages.clear()

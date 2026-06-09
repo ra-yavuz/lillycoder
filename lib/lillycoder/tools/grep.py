@@ -1,4 +1,4 @@
-"""grep tool — recursive ripgrep over the workspace."""
+"""grep tool, recursive ripgrep over the workspace."""
 from __future__ import annotations
 
 import shutil

@@ -1,4 +1,4 @@
-"""list_dir tool — list entries in a directory."""
+"""list_dir tool, list entries in a directory."""
 from __future__ import annotations
 
 from pathlib import Path

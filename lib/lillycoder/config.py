@@ -117,6 +117,29 @@ def parse_max_tokens(value: object) -> Optional[int]:
     raise ValueError(f"invalid max_tokens: {value!r}")
 
 
+_REASONING_EFFORT_VALUES = ("low", "medium", "high", "none")
+
+
+def parse_reasoning_effort(value: object) -> Optional[str]:
+    """Normalise a reasoning_effort setting from CLI or config.
+
+    Returns None for "default"/empty (omit the field, let the server
+    decide), or one of "low"/"medium"/"high"/"none". Raises ValueError
+    on unparseable input."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in ("", "default", "auto"):
+            return None
+        if s in _REASONING_EFFORT_VALUES:
+            return s
+    raise ValueError(
+        f"invalid reasoning_effort: {value!r} "
+        f"(expected default|low|medium|high|none)"
+    )
+
+
 _FALLBACK_PERSONA = (
     "You are Lilly, a friendly local-first coder assistant. Use your "
     "tools to read, write, and run things in the current folder. Be "

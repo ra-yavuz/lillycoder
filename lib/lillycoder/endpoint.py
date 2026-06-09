@@ -30,6 +30,7 @@ class ModelInfo:
     alias: str          # the model id we send in payload["model"]
     endpoint: Endpoint  # which server it lives on
     context_window: Optional[int] = None  # tokens, from server meta if known
+    multimodal: bool = False  # server reports image/audio input support
 
 
 def _pick_model(console: Console, endpoint: Endpoint,
@@ -168,6 +169,7 @@ def acquire(api_url: Optional[str] = None,
         alias=chosen_model,
         endpoint=endpoint,
         context_window=endpoint.context_for(chosen_model),
+        multimodal=_probe_multimodal(endpoint.base_url, chosen_model),
     )
     client = httpx.Client(base_url=endpoint.base_url, timeout=None)
     try:
@@ -177,6 +179,26 @@ def acquire(api_url: Optional[str] = None,
             client.close()
         except Exception:
             pass
+
+
+def _probe_multimodal(base_url: str, alias: str) -> bool:
+    """Ask the server whether `alias` accepts image/audio input.
+
+    llama-server's /v1/models reports per-model `capabilities`, e.g.
+    ["completion", "multimodal"]. Best-effort: any failure -> False, so a
+    server that doesn't expose capabilities simply offers no /image command.
+    """
+    try:
+        r = httpx.get(base_url.rstrip("/") + "/models", timeout=2.0)
+        if r.status_code != 200:
+            return False
+        for m in r.json().get("models") or r.json().get("data") or []:
+            if m.get("id") == alias or m.get("model") == alias or m.get("name") == alias:
+                caps = m.get("capabilities") or []
+                return "multimodal" in caps or "vision" in caps or "audio" in caps
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return False
+    return False
 
 
 def _ping(url: str) -> bool:

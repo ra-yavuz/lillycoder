@@ -1,3 +1,23 @@
+lillycoder (0.2.2-1) unstable; urgency=low
+
+  * Embeddable output sink: agent.run_turn now writes through a Sink
+    (ConsoleSink for the REPL, RecordingSink for headless/embedded use)
+    instead of a hardcoded rich Console, with structured on_token /
+    on_tool_call / on_tool_result hooks for programmatic consumers.
+  * Headless one-shot mode: `lillycoder --prompt "..."` runs a single task
+    non-interactively and exits, with optional --tools to restrict the
+    active tool set for the run.
+  * Auto-retry on no-action: when a turn ends with content but zero tool
+    calls (a common weak-model failure), lillycoder re-prompts imperatively
+    so the model actually performs the action.
+  * Task-scoped tool subset: callers can expose only a chosen set of tools.
+  * Workdir fix: file tools resolve relative paths against the agent's
+    workdir, not the process CWD, so embedding and headless runs work.
+  * Multimodal awareness and reasoning-effort parsing.
+  * Removed em dashes across the source per project style.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Mon, 09 Jun 2026 23:15:00 +0300
+
 lillycoder (0.2.1-1) unstable; urgency=low
 
   * Opt-in pinned bottom toolbar during model turns. Set

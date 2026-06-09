@@ -1,8 +1,8 @@
-"""pkg_install tool — gated package installation.
+"""pkg_install tool, gated package installation.
 
 Always prompts (independent of bash gating) so installing libraries is
 intentional. Supports npm, pip, cargo, apt (apt requires sudo and will
-be refused by safety.py — kept in registry so the user gets a clean
+be refused by safety.py, kept in registry so the user gets a clean
 error message instead of the model going off-script).
 """
 from __future__ import annotations

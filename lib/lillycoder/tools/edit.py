@@ -1,4 +1,4 @@
-"""edit_file tool — string-replace edit with diff preview."""
+"""edit_file tool, string-replace edit with diff preview."""
 from __future__ import annotations
 
 import difflib

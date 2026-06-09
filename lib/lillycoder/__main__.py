@@ -85,6 +85,21 @@ def main() -> int:
              "1024, 4096, 8192. persists to config; toggle live with "
              "/max-tokens.",
     )
+    parser.add_argument(
+        "--prompt",
+        default=None,
+        help="run a SINGLE task non-interactively (no REPL) and exit. Reads "
+             "this prompt, runs one turn (with tool calls), prints the result, "
+             "and returns 0 on success. Useful for scripting, CI, and being "
+             "driven by another program. Use --tools to restrict the tool set.",
+    )
+    parser.add_argument(
+        "--tools",
+        default=None,
+        help="comma-separated allowlist of tool names to expose for this run "
+             "(e.g. read_file,write_file,edit_file). Fewer tools improves "
+             "selection accuracy on small models. Only meaningful with --prompt.",
+    )
     args = parser.parse_args()
 
     if args.version:
@@ -107,6 +122,21 @@ def main() -> int:
         for ep in eps:
             print(f"{ep.base_url}\t{ep.label}\t{len(ep.models)} models")
         return 0
+
+    if args.prompt is not None:
+        from .headless import run_headless
+        tool_subset = None
+        if args.tools:
+            tool_subset = [t.strip() for t in args.tools.split(",") if t.strip()]
+        return run_headless(
+            prompt=args.prompt,
+            api_url=args.api,
+            model=args.model,
+            persona=args.persona,
+            force=args.force,
+            max_tokens_arg=args.max_tokens,
+            tool_subset=tool_subset,
+        )
 
     from .repl import run_repl
     return run_repl(

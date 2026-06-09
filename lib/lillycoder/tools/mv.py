@@ -1,4 +1,4 @@
-"""mv tool — rename / move a file or directory."""
+"""mv tool, rename / move a file or directory."""
 from __future__ import annotations
 
 import shutil

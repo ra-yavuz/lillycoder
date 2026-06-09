@@ -6,8 +6,10 @@ take over message construction once tools exist.
 """
 from __future__ import annotations
 
+import base64
 import difflib
 import json
+import mimetypes
 import os
 import sys
 from pathlib import Path
@@ -51,6 +53,9 @@ slash commands:
   /clear                      start a new session (old one stays in /session list)
   /compact                    summarise older history into a system note
   /tools                      list tools the model can call
+  /image <path>               attach an image to your next message (multimodal models)
+  /audio <path>               attach an audio clip to your next message (multimodal models)
+  /clear-attach               drop any staged attachments
 
 sessions (per folder, stored in .lillycoder/sessions/):
   /session                    list sessions in this folder (alias: /session list)
@@ -79,6 +84,13 @@ session settings (persisted in ~/.config/lillycoder/config.toml):
                               the model's context window so reasoning
                               models get enough headroom for both
                               thinking and visible content
+  /reasoning [default|low|medium|high|none]
+                              how hard the model should think before
+                              replying. default = let the server decide.
+                              low (the lilly default) keeps the visible
+                              reply from getting eaten by hidden CoT on
+                              reasoning models. pair with /thoughts on
+                              to watch the thinking stream
 
 deprecated (still work, but use the /persona namespace instead):
   /personas, /setpersona, /personalities, /persona-active,
@@ -94,6 +106,40 @@ def _line_history_path() -> Path:
     p = Path.home() / ".config" / "lillycoder"
     p.mkdir(parents=True, exist_ok=True)
     return p / "input_history"
+
+
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+_AUDIO_EXTS = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
+
+
+def _attachment_part(path: Path):
+    """OpenAI content part for an image (image_url data URI) or audio
+    (input_audio base64), matching llama-server. None if unsupported."""
+    ext = path.suffix.lower()
+    b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+    if ext in _IMAGE_EXTS:
+        mime = mimetypes.guess_type(str(path))[0] or "image/png"
+        return {"type": "image_url",
+                "image_url": {"url": f"data:{mime};base64,{b64}"}}
+    if ext in _AUDIO_EXTS:
+        return {"type": "input_audio",
+                "input_audio": {"data": b64, "format": ext.lstrip(".")}}
+    return None
+
+
+def _multimodal_content(text: str, attachments):
+    """text + file Paths -> plain string (no attachments) or content array."""
+    parts = []
+    for p in attachments:
+        try:
+            part = _attachment_part(Path(p))
+        except OSError:
+            continue
+        if part is not None:
+            parts.append(part)
+    if not parts:
+        return text
+    return [{"type": "text", "text": text}, *parts]
 
 
 def run_repl(api_url: Optional[str] = None,
@@ -136,6 +182,8 @@ def run_repl(api_url: Optional[str] = None,
             messages = load_messages(store.active(), system_prompt)
             ctx = ContextTracker(model_window=model.context_window or 8192)
             ctx.refresh(messages)
+            # Files staged by /image and /audio, attached to the next message.
+            pending_attachments: list[Path] = []
 
             def _remember_persona(name: str) -> None:
                 """Persist `name` as the last active persona so future
@@ -186,6 +234,16 @@ def run_repl(api_url: Optional[str] = None,
                     )
                 except ValueError:
                     max_tokens = None
+
+            # reasoning_effort: persisted, defaults to "low" so reasoning
+            # models don't blow their reply budget on hidden CoT. "default"
+            # in config (or any unparseable value) means: omit the field.
+            try:
+                reasoning_effort = _config.parse_reasoning_effort(
+                    cfg.get("ui", {}).get("reasoning_effort", "low")
+                )
+            except ValueError:
+                reasoning_effort = "low"
 
             # Hook the set_persona tool so the model can rewrite the
             # current system prompt. The hook is closed over the local
@@ -324,6 +382,7 @@ def run_repl(api_url: Optional[str] = None,
                 # A long toolbar that wraps to two lines is the usual
                 # cause of the toolbar "disappearing" while typing.
                 mt_lbl = "auto" if max_tokens is None else str(max_tokens)
+                re_lbl = reasoning_effort or "default"
                 project = store.project_label()
                 return HTML(
                     f"<ansimagenta>🦊</ansimagenta> "
@@ -331,7 +390,8 @@ def run_repl(api_url: Optional[str] = None,
                     f"<ansicyan>{model.alias}</ansicyan> · "
                     f"<{pct_color}>{pct:.0f}% of {ctx_lbl}</{pct_color}> · "
                     f"{persona} · "
-                    f"max:{mt_lbl}"
+                    f"max:{mt_lbl} · "
+                    f"r:{re_lbl}"
                     f"{flag_str}"
                 )
 
@@ -927,6 +987,29 @@ def run_repl(api_url: Optional[str] = None,
                         shown = "auto" if max_tokens is None else str(max_tokens)
                         console.print(f"[dim]✓ max_tokens {shown}[/dim]")
                         continue
+                    if cmd == "/reasoning":
+                        rest = user_input[len("/reasoning"):].strip().lower()
+                        if rest == "":
+                            current = reasoning_effort or "default"
+                            console.print(
+                                f"[dim]reasoning_effort = {current}. usage: "
+                                f"/reasoning [default|low|medium|high|none][/dim]"
+                            )
+                            continue
+                        try:
+                            reasoning_effort = _config.parse_reasoning_effort(rest)
+                        except ValueError as e:
+                            console.print(f"[red]✗ {e}[/red]")
+                            continue
+                        cfg = _config.load()
+                        cfg.setdefault("ui", {})["reasoning_effort"] = (
+                            "default" if reasoning_effort is None
+                            else reasoning_effort
+                        )
+                        _config.save(cfg)
+                        shown = reasoning_effort or "default"
+                        console.print(f"[dim]✓ reasoning_effort {shown}[/dim]")
+                        continue
                     if cmd == "/thoughts":
                         rest = user_input[len("/thoughts"):].strip().lower()
                         if rest in ("on", "true", "1", "yes"):
@@ -1009,6 +1092,30 @@ def run_repl(api_url: Optional[str] = None,
                             "[yellow]usage: /session [list|new [label]|load <id|index|label>][/yellow]"
                         )
                         continue
+                    if cmd in ("/image", "/audio"):
+                        if not model.multimodal:
+                            console.print(
+                                f"[yellow]{model.alias} does not report image/audio "
+                                f"support; attachment ignored[/yellow]"
+                            )
+                            continue
+                        rest = user_input.split(None, 1)
+                        if len(rest) != 2 or not rest[1].strip():
+                            console.print(f"[yellow]usage: {cmd} <path>[/yellow]")
+                            continue
+                        ap = Path(rest[1].strip()).expanduser()
+                        if not ap.is_file():
+                            console.print(f"[red]file not found: {ap}[/red]")
+                            continue
+                        pending_attachments.append(ap)
+                        console.print(
+                            f"[grey78]attached {ap.name}; send a message to include it[/grey78]"
+                        )
+                        continue
+                    if cmd == "/clear-attach":
+                        pending_attachments.clear()
+                        console.print("[grey78]attachments cleared[/grey78]")
+                        continue
                     console.print(f"[yellow]unknown: {cmd} - try /help[/yellow]")
                     continue
 
@@ -1030,7 +1137,14 @@ def run_repl(api_url: Optional[str] = None,
                         )
 
                 # Chat turn - agent loop with tool dispatch.
-                messages.append({"role": "user", "content": user_input})
+                if pending_attachments:
+                    content = _multimodal_content(user_input, pending_attachments)
+                    names = ", ".join(p.name for p in pending_attachments)
+                    messages.append({"role": "user", "content": content})
+                    console.print(f"[grey78]   (sent with: {names})[/grey78]")
+                    pending_attachments = []
+                else:
+                    messages.append({"role": "user", "content": user_input})
                 # Lazy-create a session file on first user message so a
                 # /exit before any prompt doesn't litter the folder.
                 active = store.active()
@@ -1044,7 +1158,8 @@ def run_repl(api_url: Optional[str] = None,
                         run_turn(client, model, messages, console,
                                  bypass_perms=bypass_perms, workdir=workdir,
                                  show_thoughts=show_thoughts,
-                                 max_tokens=max_tokens)
+                                 max_tokens=max_tokens,
+                                 reasoning_effort=reasoning_effort)
                     # When LILLY_TOOLBAR_PIN=1 (and the terminal looks
                     # capable), run_with_pinned_toolbar holds an async
                     # prompt_toolkit Application around the turn so the

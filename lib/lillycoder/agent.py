@@ -16,11 +16,13 @@ Flow per user turn:
 
 This implementation assumes the model speaks the OpenAI tool-call format
 natively (qwen3+, gemma3+, dolphin-r1). For models that don't, agent.py
-would need to swap to a JSON-protocol prompt — kept as future work.
+would need to swap to a JSON-protocol prompt (kept as future work).
 """
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -32,9 +34,32 @@ from rich.syntax import Syntax
 from . import permissions
 from .endpoint import ModelInfo
 from .safety import classify_command, classify_path_write
+from .sink import as_sink as _as_sink
 from .tools import bash as bash_module
 from .tools.registry import all_tools, by_name, schemas_for_model
 from .spinner import Spinner
+
+
+def _looks_complete(content: Optional[str]) -> bool:
+    """Heuristic: does the assistant's tool-less reply read as a finished turn
+    rather than a narration of an action it forgot to perform? Used to decide
+    whether to nudge. Conservative: only treat clear completion signals as
+    'done' so we err toward nudging when ambiguous."""
+    if not content:
+        return False
+    c = content.strip().lower()
+    if not c:
+        return False
+    if "done" in c[:8] or c.startswith("done"):
+        return True
+    # Narration markers that mean "about to act" => NOT complete.
+    narration = ("i'll ", "i will ", "let me ", "first i", "next i",
+                 "i'm going to", "i am going to", "i need to")
+    if any(c.startswith(n) or (" " + n) in c[:40] for n in narration):
+        return False
+    # A reply that ends with a question or is a plain answer (no pending file
+    # op implied) is treated as complete.
+    return c.endswith((".", "!", "?", "✨", "`")) or len(c) < 200
 
 
 MAX_TOOL_ITERATIONS = 12
@@ -172,9 +197,15 @@ def _emit_segment(console: Console, text: str, *, in_thought: bool,
                    show_thoughts: bool) -> None:
     """Render a chunk to the console. Thought segments are styled
     distinctly (italic dim) and only shown when show_thoughts is True;
-    visible content is always printed."""
+    visible content is always printed. Also forwards the chunk to the sink's
+    structured on_token hook so embedders get the token stream without parsing
+    rendered terminal text."""
     if not text:
         return
+    # Structured event for embedders (no-op on a plain Console).
+    hook = getattr(console, "on_token", None)
+    if callable(hook):
+        hook(text, in_thought)
     if in_thought:
         if show_thoughts:
             console.print(text, end="", style="italic grey50",
@@ -359,20 +390,31 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
                                   messages: list[dict], console: Console,
                                   show_thoughts: bool = False,
                                   max_tokens: Optional[int] = None,
+                                  reasoning_effort: Optional[str] = None,
+                                  tool_subset: Optional[list[str]] = None,
                                   ) -> tuple[str, list[dict]]:
     """Send one chat-completion request, stream content tokens to the
     console, accumulate any tool calls. Returns (content_text, [tool_calls]).
     Raises KeyboardInterrupt back to the caller if the user hits Ctrl+C
-    during the stream (caller wipes the spinner and resumes the REPL)."""
+    during the stream (caller wipes the spinner and resumes the REPL).
+
+    `reasoning_effort` is one of "low"/"medium"/"high"/"none", or None to
+    omit the field entirely (server picks its own default). When set, we
+    send it under both `reasoning_effort` (OpenAI shape) and
+    `reasoning.effort` (llama.cpp / some compat servers) so it lands on
+    whichever the backend understands; servers ignore unknown fields."""
     payload: dict = {
         "model": model.alias,
         "messages": messages,
-        "tools": schemas_for_model(),
+        "tools": schemas_for_model(tool_subset),
         "tool_choice": "auto",
         "stream": True,
         "temperature": 0.5,   # lower than chat - we want decisive tool use
         "max_tokens": _resolve_max_tokens(model, messages, max_tokens),
     }
+    if reasoning_effort:
+        payload["reasoning_effort"] = reasoning_effort
+        payload["reasoning"] = {"effort": reasoning_effort}
     full_content = ""
     accum_tools: dict[int, dict] = {}
     finish_reason = None
@@ -385,13 +427,15 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
         "harmony_in_thought_body": False,
     }
 
-    # Spinner shown while waiting for the model's first byte. Stopped as
-    # soon as any delta (content or tool_call) arrives so streamed output
-    # isn't visually fighting the spinner. Plain-stdout spinner so it
+    # Spinner shown while waiting for the model's first byte. Stopped on
+    # visible content or tool deltas, but kept alive (with a different
+    # label) for reasoning-only streams so an all-reasoning turn doesn't
+    # look like a hang followed by silence. Plain-stdout spinner so it
     # plays nicely with prompt_toolkit's patch_stdout().
     status = Spinner("lilly is thinking...")
     status.start()
     spinner_active = True
+    spinner_mode = "thinking"  # 'thinking' | 'reasoning' | 'stopped'
     interrupted = False
     printed_any = False
 
@@ -419,9 +463,20 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
                 reasoning = (delta.get("reasoning_content")
                              or delta.get("reasoning"))
                 has_tool_delta = bool(delta.get("tool_calls"))
-                if (content or reasoning or has_tool_delta) and spinner_active:
+                # Visible deltas (content, tool calls) stop the spinner so
+                # streamed text doesn't fight it. Reasoning-only deltas
+                # swap the spinner label to "reasoning" instead, so the
+                # user sees that something is happening even if /thoughts
+                # is off and the model spends the whole budget thinking.
+                if (content or has_tool_delta) and spinner_active:
                     status.stop()
                     spinner_active = False
+                    spinner_mode = "stopped"
+                elif reasoning and spinner_active and spinner_mode == "thinking":
+                    status.stop()
+                    status = Spinner("lilly is reasoning...")
+                    status.start()
+                    spinner_mode = "reasoning"
                 if reasoning:
                     if show_thoughts:
                         printed_any = True
@@ -463,6 +518,15 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
             console.print()
     if full_content:
         console.print()  # newline after streamed content
+    if finish_reason == "length" and not interrupted and not accum_tools:
+        # Server stopped because we hit max_tokens. If the entire budget
+        # was eaten by hidden reasoning, full_content is empty and the
+        # turn looks silent; either way the user deserves to know.
+        hint = ("budget consumed by hidden reasoning; "
+                "try /reasoning low or /thoughts on to see it"
+                if not full_content
+                else "raise /max-tokens, or lower /reasoning")
+        console.print(f"[yellow]   ⚠ cut off at max_tokens ({hint})[/yellow]")
 
     # Build the final tool_calls list in OpenAI shape.
     tool_calls_out = []
@@ -499,22 +563,73 @@ def _short_args(args: dict) -> str:
     return ", ".join(parts)
 
 
+@contextlib.contextmanager
+def _in_workdir(workdir: Path):
+    """Make the process CWD equal `workdir` for the duration of the turn.
+
+    The file tools (write_file/read_file/...) and the path-scope safety
+    check both resolve relative paths via Path(path).resolve(), which is
+    relative to the process CWD. The REPL happens to launch with CWD ==
+    workdir, so it works there by accident. Any embedding caller (e.g. an
+    orchestrator) or a headless run where CWD != workdir would otherwise
+    have every relative path resolve against the wrong base and get blocked
+    as 'outside workspace'. Anchoring CWD to workdir makes the tools and the
+    safety check agree, and makes the `workdir` argument actually mean
+    something. Best-effort: if workdir doesn't exist we run as-is."""
+    prev = os.getcwd()
+    try:
+        target = Path(workdir).expanduser().resolve()
+        if target.is_dir():
+            os.chdir(target)
+        yield
+    finally:
+        try:
+            os.chdir(prev)
+        except OSError:
+            pass
+
+
+NO_ACTION_NUDGE = (
+    "You described what you would do but did not call any tool. "
+    "Do it now by CALLING the appropriate tool(s); do not just describe the "
+    "action. If the task is already fully complete, say exactly: DONE."
+)
+
+
 def run_turn(client: httpx.Client, model: ModelInfo,
              messages: list[dict], console: Console,
              bypass_perms: bool, workdir: Path,
              show_thoughts: bool = False,
-             max_tokens: Optional[int] = None) -> None:
+             max_tokens: Optional[int] = None,
+             reasoning_effort: Optional[str] = None,
+             nudge_on_no_action: bool = True,
+             max_nudges: int = 1,
+             tool_subset: Optional[list[str]] = None) -> None:
     """Single user turn: may involve multiple model + tool iterations.
     Mutates `messages` in place. Raises KeyboardInterrupt back to the
-    caller if the user hits Ctrl+C during the turn."""
+    caller if the user hits Ctrl+C during the turn.
+
+    `console` may be a rich Console (the REPL) or any Sink; it is coerced so
+    the structured on_* hooks are always available for embedders.
+
+    `nudge_on_no_action`: when a turn ends with assistant content but zero tool
+    calls (the model narrated an action instead of performing it, a common
+    weak-local-model failure), re-prompt imperatively up to `max_nudges` times.
+    Disabled automatically once the model signals completion (says DONE or the
+    content reads like a final answer with no pending action)."""
     import asyncio
 
+    sink = _as_sink(console)
+
     async def _go():
+        nudges_used = 0
         for _ in range(MAX_TOOL_ITERATIONS):
             content, tool_calls = await _stream_one_completion(
                 client, model, messages, console,
                 show_thoughts=show_thoughts,
                 max_tokens=max_tokens,
+                reasoning_effort=reasoning_effort,
+                tool_subset=tool_subset,
             )
             # Build assistant message; OpenAI shape requires content key
             # even when tool_calls present.
@@ -527,6 +642,18 @@ def run_turn(client: httpx.Client, model: ModelInfo,
             messages.append(asst_msg)
 
             if not tool_calls:
+                # The model produced no tool call. Either it is genuinely done,
+                # or it narrated an action without performing it. If we still
+                # have nudges left and the content does not look final, push it
+                # to actually act. This recovers the ~30% narrate-instead-of-act
+                # failure measured on harder local-model tasks.
+                if (nudge_on_no_action and nudges_used < max_nudges
+                        and not _looks_complete(content)):
+                    nudges_used += 1
+                    sink.print("[yellow]   ↻ no tool call; nudging to act[/yellow]")
+                    messages.append({"role": "user", "content": NO_ACTION_NUDGE})
+                    continue
+                sink.on_turn_end(stopped_reason=None)
                 return  # done
 
             # Execute each tool call in order.
@@ -544,6 +671,7 @@ def run_turn(client: httpx.Client, model: ModelInfo,
                                   markup=False, highlight=False, style="grey50")
                 else:
                     console.print()
+                sink.on_tool_call(name, args)
                 ok, reason = _gate_tool_call(console, name, args,
                                               bypass_perms, workdir)
                 if not ok:
@@ -562,6 +690,7 @@ def run_turn(client: httpx.Client, model: ModelInfo,
                         console.print(f"[green]   ✓ {name}[/green]")
                     else:
                         console.print(f"[red]   ✗ {name}: {result.get('error')}[/red]")
+                sink.on_tool_result(name, bool(result.get("ok")), result)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
@@ -569,9 +698,11 @@ def run_turn(client: httpx.Client, model: ModelInfo,
                 })
             # Loop back: model gets to read tool results and decide next.
         console.print("[yellow]   ⚠ hit max tool iterations, stopping[/yellow]")
+        sink.on_turn_end(stopped_reason="max_iterations")
 
     try:
-        asyncio.run(_go())
+        with _in_workdir(workdir):
+            asyncio.run(_go())
     except KeyboardInterrupt:
         # Append a synthetic assistant note so the conversation stays
         # well-formed even though the model's own message was cut short.
