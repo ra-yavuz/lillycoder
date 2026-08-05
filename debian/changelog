@@ -1,3 +1,15 @@
+lillycoder (0.3.2-1) unstable; urgency=low
+
+  * Treat requests to find persona or personality definitions in the current
+    repository as source-code searches instead of LillyCoder persona
+    administration.
+  * Clarify that list_personas lists only LillyCoder's runtime personas and
+    must not answer questions about definitions in project files.
+  * Add regression coverage for "find the personalities defined here and list
+    them" while preserving genuine runtime-persona requests.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Wed, 05 Aug 2026 13:43:00 +0300
+
 lillycoder (0.3.1-1) unstable; urgency=low
 
   * Flush the stream parser's final look-behind buffer when a model response

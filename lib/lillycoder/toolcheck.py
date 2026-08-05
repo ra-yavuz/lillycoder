@@ -52,6 +52,28 @@ PERSONA_TOOLS = [
 ]
 
 
+def _is_repository_persona_lookup(prompt: str) -> bool:
+    """Distinguish source-code concepts from Lilly's runtime personas.
+
+    Words such as "persona" and "personality" commonly name classes, config,
+    fixtures, or character definitions inside the current project. A request
+    to find definitions "here" should therefore stay on the coding tools,
+    while ordinary requests to list, create, or switch Lilly's own personas
+    can expose the persona-management tools.
+    """
+    lookup = re.search(
+        r"\b(find|search|locate|grep|scan|inspect|defined|definition|"
+        r"definitions|declared|implemented)\b",
+        prompt,
+    )
+    project_scope = re.search(
+        r"\b(here|repo|repository|project|codebase|workspace|directory|"
+        r"folder|files?|source)\b",
+        prompt,
+    )
+    return bool(lookup and project_scope)
+
+
 def tools_for_prompt(prompt: str) -> list[str]:
     """Keep weak-model tool menus focused without removing capabilities.
 
@@ -67,9 +89,10 @@ def tools_for_prompt(prompt: str) -> list[str]:
         lower,
     ):
         chosen.append("pkg_install")
-    if re.search(
+    persona_mentioned = re.search(
         r"\b(persona|personality|personalities|evolve|tsundere|yandere)\b",
         lower,
-    ):
+    )
+    if persona_mentioned and not _is_repository_persona_lookup(lower):
         chosen.extend(PERSONA_TOOLS)
     return chosen

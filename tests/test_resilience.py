@@ -169,6 +169,16 @@ def test_prompt_tool_routing_keeps_normal_menu_focused():
     assert "add_persona" in persona and "set_active_persona" in persona
 
 
+def test_repository_personality_lookup_uses_coding_tools_not_runtime_personas():
+    tools = tools_for_prompt("find the personalities defined here and list them")
+    assert "find" in tools and "grep" in tools and "read_file" in tools
+    assert "list_personas" not in tools
+    assert "set_persona" not in tools
+
+    runtime = tools_for_prompt("which personalities can Lilly switch to?")
+    assert "list_personas" in runtime
+
+
 def test_request_estimate_includes_tool_schemas():
     tracker = ContextTracker(model_window=1000)
     messages = [{"role": "system", "content": "short"}]

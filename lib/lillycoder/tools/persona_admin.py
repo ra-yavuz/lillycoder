@@ -48,10 +48,13 @@ def _list_handler() -> dict:
 register(Tool(
     name="list_personas",
     description=(
-        "List every available persona Lilly can switch to (bundled "
-        "and user-created), with their origin. Use this before "
-        "creating a new persona to avoid name collisions, or to "
-        "answer the user when they ask which personalities exist."
+        "List only the runtime personas LillyCoder can switch to (bundled "
+        "and user-created), with their origin. Use this before creating a "
+        "new LillyCoder persona to avoid name collisions, or when the user "
+        "asks which personas Lilly can use. Do not use this for persona or "
+        "personality definitions in the current repository, project, or "
+        "files; search the workspace with list_dir, find, grep, and "
+        "read_file instead."
     ),
     parameters={"type": "object", "properties": {}},
     handler=_list_handler,
