@@ -3,20 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>lillycoder: a local-first coder REPL with a persona that evolves</title>
-<meta name="description" content="lillycoder is a small open-source CLI by Ramazan Yavuz: a chat REPL with a persona that evolves. The model on the other end can read, write, and edit files, run shell commands, and install packages. Six bundled personas, live switching, and tool-driven persona management. Talks to any OpenAI-compatible /v1 endpoint (llama.cpp, ollama, LM Studio, hydra-llm). No cloud, no API key, no telemetry.">
+<title>lillycoder: a resilient local-first coding assistant</title>
+<meta name="description" content="lillycoder is a local-first coding assistant by Ramazan Yavuz. It discovers local LLMs, can start downloaded hydra-llm models, manages bounded long-session context, and gives the model permission-gated project tools. No cloud, API key, telemetry, or account.">
 <meta name="author" content="Ramazan Yavuz">
 <meta name="keywords" content="lillycoder, local llm coder, claude code alternative, aider alternative, open source coding assistant, ollama coder, llama.cpp coder, hydra-llm, local repl tool, openai compatible cli, agent file tools, persona system, evolving persona">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="https://ra-yavuz.github.io/lillycoder/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="lillycoder: a local-first coder REPL with a persona that evolves">
-<meta property="og:description" content="A chat REPL whose persona you can shape, switch, and grow. Six bundled personas, tool-driven persona management, talks to any local OpenAI-compatible /v1 endpoint.">
+<meta property="og:title" content="lillycoder: a resilient local-first coding assistant">
+<meta property="og:description" content="A project assistant with guided local-model startup, permission-gated tools, durable conversations, and bounded working context.">
 <meta property="og:url" content="https://ra-yavuz.github.io/lillycoder/">
 <meta property="og:site_name" content="ra-yavuz">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="lillycoder: a local-first coder REPL with a persona that evolves">
-<meta name="twitter:description" content="A chat REPL whose persona you can shape, switch, and grow. Six bundled personas, tool-driven persona management, fully local.">
+<meta name="twitter:title" content="lillycoder: a resilient local-first coding assistant">
+<meta name="twitter:description" content="Guided local-model startup, project tools, durable conversations, and bounded working context, fully local.">
 <meta property="og:image" content="https://ra-yavuz.github.io/lillycoder/logo-icon.png">
 <meta name="twitter:image" content="https://ra-yavuz.github.io/lillycoder/logo-icon.png">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
@@ -126,10 +126,10 @@
   "name": "lillycoder",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux",
-  "description": "A chat REPL with a persona that evolves. The local LLM can read, write, and edit files, run shell commands, and install packages in the current folder. Six bundled personas, live switching, tool-driven persona management. Talks to any OpenAI-compatible /v1 endpoint.",
+  "description": "A local-first coding assistant with guided model startup, permission-gated project tools, durable conversations, bounded context management, and evolving personas.",
   "url": "https://ra-yavuz.github.io/lillycoder/",
   "downloadUrl": "https://github.com/ra-yavuz/lillycoder/releases",
-  "softwareVersion": "0.2.1",
+  "softwareVersion": "0.3.0",
   "license": "https://opensource.org/licenses/MIT",
   "author": {
     "@type": "Person",
@@ -153,11 +153,10 @@
   <picture><source srcset="logo.webp" type="image/webp"><img class="brand" src="logo.png" alt="lillycoder logo: a terminal window with ASCII glyphs and the silhouette of a girl with long hair seen from the back"></picture>
   <h1>lillycoder</h1>
   <p class="tag">
-    A small CLI that drops you into a chat REPL inside any folder, with a
-    persona that evolves. The model on the other end can read, write, and
-    edit your files, run shell commands, and install packages, all gated by
-    a per-tool permission prompt. Talks to any local OpenAI-compatible
-    <code>/v1</code> endpoint. No cloud, no API key, no telemetry, no account.
+    A local-first coding assistant for projects, analysis, code, and long
+    conversations. It discovers local model endpoints, can start downloaded
+    Hydra models, and gives the model permission-gated project tools. No
+    cloud, no API key, no telemetry, no account.
   </p>
   <p class="tag">
     What sets it apart: a real persona system. Six bundled voices (default
@@ -176,9 +175,9 @@
 
   <h2>What it is</h2>
   <p>
-    A 10-file Python package plus a CLI shim. You run <code>lillycoder</code>
-    in a project directory and start typing. The model picks tools from a
-    fixed set (<code>read_file</code>, <code>write_file</code>,
+    Run <code>lillycoder</code> in a project directory and start typing. The
+    model receives a focused set of tools appropriate to the request
+    (<code>read_file</code>, <code>write_file</code>,
     <code>edit_file</code>, <code>bash</code>, <code>mkdir</code>,
     <code>mv</code>, <code>rm</code>, <code>grep</code>, <code>find</code>,
     <code>list_dir</code>, <code>pkg_install</code>) to do what you asked.
@@ -192,10 +191,10 @@
 
   <h2>What it is not</h2>
   <p>
-    lillycoder does not start LLM servers, manage Docker, or ship a model.
-    It expects a server already running on localhost (llama.cpp, ollama, LM
-    Studio, etc.). On first run it scans common ports and offers to use
-    whatever it finds, or you pass <code>--api</code>.
+    lillycoder does not ship or download a model and does not manage Docker
+    itself. It works with any OpenAI-compatible endpoint. When the optional
+    <code>hydra-llm</code> command is installed, LillyCoder can list Hydra's
+    downloaded models and delegate starting the one you select.
   </p>
 
   <h2 id="install">Install</h2>
@@ -265,17 +264,39 @@ pip install --user -e .</code></pre>
 
   <h2>Quick start</h2>
   <p>
-    Have an LLM server running somewhere on localhost. Then in any project:
+    In any project, run:
   </p>
 <pre><code>cd ~/myproject
 lillycoder</code></pre>
 <pre><code>🦊 scanning localhost for LLM servers...
-🦊 found 1 endpoint: http://localhost:11434/v1 (ollama, 3 models)
-   use it? [Y/n] y
-✓ ollama · qwen2.5-coder:7b
-🦊 lilly is awake · qwen2.5-coder:7b · /home/you/myproject  ·  11 tools
-   type a message · /help for commands · /exit to leave
-[ctx 1.2k/8k·15%] › what files are in this folder?</code></pre>
+🦊 found http://localhost:18102/v1 (hydra:my-coder, 1 models)
+✓ hydra:my-coder · qwen-coder.gguf
+🦊 lilly is awake in /home/you/myproject · /help · /new · /sessions · /exit
+› what files are in this folder?</code></pre>
+  <p>
+    If no server is running and Hydra is installed, LillyCoder lists the
+    models already downloaded by Hydra. Select one by number or alias and it
+    is started for you. You can still use
+    <code>lillycoder --api http://your.host:8080/v1</code> for any other
+    compatible server.
+  </p>
+
+  <h2>Long conversations</h2>
+  <p>
+    The complete conversation stays in the project session archive while
+    LillyCoder keeps a bounded working context for the model. It checks the
+    prompt and tool schemas before every completion, keeps recent turns,
+    folds older turns into durable memory, and replaces used tool payloads
+    with short records. Compaction snapshots persist across restarts, and a
+    local fallback works even if the model cannot summarize.
+  </p>
+  <p>
+    Use <code>/context</code> to inspect usage, <code>/compact</code> to
+    checkpoint manually, <code>/new</code> to start a fresh conversation,
+    and <code>/sessions</code> plus <code>/resume</code> to return to one.
+    The live working window is capped conservatively at 32K tokens even if a
+    server advertises a much larger trained context.
+  </p>
 
   <h2>Personalities</h2>
   <p>
@@ -365,22 +386,16 @@ lillycoder</code></pre>
     sibling project that manages local LLM servers: it wraps llama.cpp in
     Docker, ships a curated GGUF catalog with anonymous downloads, and
     exposes each running model as an OpenAI-compatible endpoint on a
-    stable local port. lillycoder talks that exact shape, so the two
-    compose into a fully local coding agent in one terminal:
+    stable local port. LillyCoder asks Hydra for all running ports and can
+    start an already-downloaded model when none is running:
   </p>
-<pre><code># in hydra-llm:
-hydra-llm start qwen2.5-32b           # or any 'code' tagged model
-hydra-llm api   qwen2.5-32b           # prints the URL
-
-# in your project directory:
-lillycoder --api http://localhost:18087/v1
-# (lilly auto-detects common local LLM ports too, so just `lillycoder` often works)</code></pre>
+<pre><code>cd ~/myproject
+lillycoder</code></pre>
   <p>
-    hydra-llm handles model lifecycle (download, start/stop, system prompts,
-    persistent sessions, optional KDE Plasma widget). lillycoder is the
-    agent on top: file tools, shell tools, grep, permission gating. Use
-    them together, or use lillycoder with whatever local server you
-    already run.
+    Hydra handles downloads, lifecycle, safe llama.cpp resource settings,
+    and its optional KDE Plasma widget. LillyCoder is the coding assistant
+    on top: project tools, permissions, context, conversations, and personas.
+    It remains compatible with other OpenAI-compatible servers.
   </p>
 
   <h2>Safety</h2>

@@ -23,8 +23,9 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 from rich.console import Console
@@ -32,6 +33,12 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 
 from . import permissions
+from .context import (
+    bound_json_value,
+    estimate_messages,
+    estimate_tools,
+    safe_working_window,
+)
 from .endpoint import ModelInfo
 from .safety import classify_command, classify_path_write
 from .sink import as_sink as _as_sink
@@ -63,6 +70,29 @@ def _looks_complete(content: Optional[str]) -> bool:
 
 
 MAX_TOOL_ITERATIONS = 12
+
+
+class ModelRequestError(RuntimeError):
+    """A model request failed without terminating the LillyCoder process."""
+
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+    @property
+    def context_related(self) -> bool:
+        text = str(self).lower()
+        signals = (
+            "context", "too many tokens", "token limit", "prompt is too long",
+            "exceeds the available", "kv cache", "n_ctx", "input too long",
+        )
+        return any(signal in text for signal in signals)
+
+    @property
+    def oom_related(self) -> bool:
+        text = str(self).lower()
+        signals = ("out of memory", "oom", "memory allocation", "killed")
+        return any(signal in text for signal in signals)
 
 
 def _parse_tool_calls_from_chunk(d: dict, accum: dict) -> None:
@@ -135,18 +165,66 @@ def _guess_lang(path: str) -> str:
     }.get(ext, "text")
 
 
+class RepeatGuard:
+    """Suppress IDENTICAL read-only tool calls within one turn.
+
+    Weak local models loop on re-reading what they already saw (observed
+    live: a repair worker grepped, read the right 400-line region, then
+    re-read the same region twice more and died of context bloat without
+    editing). Repeating a non-mutating call cannot produce new information
+    unless state changed, so the repeat gets a short stub telling the model
+    to act on what it has. Any mutating call resets the guard, keeping the
+    legitimate edit-then-re-read verification pattern intact.
+    """
+
+    NOTE = ("You already made this exact call this turn and the result has "
+            "not changed; it is not repeated here to save context. Act on "
+            "what you already read: if you have located the defect, apply "
+            "the fix with edit_file now.")
+
+    def __init__(self):
+        self._seen: set[tuple[str, str]] = set()
+
+    def is_repeat(self, name: str, args: dict, mutating: bool) -> bool:
+        """True if this exact non-mutating call already ran this turn.
+        Mutating calls always run, and reset the guard."""
+        if mutating:
+            self._seen.clear()
+            return False
+        key = (name, json.dumps(args, sort_keys=True, ensure_ascii=False))
+        if key in self._seen:
+            return True
+        self._seen.add(key)
+        return False
+
+    def stub_result(self) -> dict:
+        return {"ok": True, "repeat_suppressed": True, "note": self.NOTE}
+
+
 def _gate_tool_call(console: Console, name: str, args: dict,
-                    bypass_perms: bool, workdir: Path) -> tuple[bool, Optional[str]]:
-    """Run safety + permission gates. Returns (ok_to_run, blocked_reason)."""
+                    bypass_perms: bool, workdir: Path,
+                    bash_deny: Optional[list] = None) -> tuple[bool, Optional[str]]:
+    """Run safety + permission gates. Returns (ok_to_run, blocked_reason).
+
+    `bash_deny` is an optional list of pre-compiled regex patterns; a bash
+    command matching any of them is refused. This is a CALLER policy layer
+    (an embedder like an orchestrator forbidding package installs in an
+    autonomous run), distinct from the always-on hard-deny safety classifier.
+    Default None means no extra denial, so the standalone REPL is unaffected."""
     tool = by_name(name)
     if tool is None:
         return False, f"unknown tool: {name}"
 
     # Safety: command-level
     if name == "bash":
-        verdict = classify_command(args.get("cmd", ""))
+        cmd = args.get("cmd", "")
+        verdict = classify_command(cmd)
         if not verdict.allowed:
             return False, f"safety: {verdict.reason}"
+        for pat in (bash_deny or []):
+            if pat.search(cmd):
+                return False, (f"policy: command matches a denied pattern "
+                               f"({pat.pattern!r}); this run forbids it")
     if name == "pkg_install" and args.get("manager") == "apt":
         return False, "safety: apt requires sudo, refused"
 
@@ -352,35 +430,29 @@ def _route_content_chunk(console: Console, chunk: str, state: dict,
 
 
 def _resolve_max_tokens(model: ModelInfo, messages: list[dict],
-                        setting: Optional[int]) -> int:
+                        setting: Optional[int],
+                        tools: Optional[list[dict]] = None) -> int:
     """Compute the max_tokens value to send.
 
-    setting=None means 'auto': use most of the remaining context window
-    (after subtracting an estimate of the prompt), capped at 16384 so
-    huge-context models don't ask for absurdly long replies on small
-    prompts. setting>0 is taken as an explicit user override.
+    setting=None means 'auto': use most of the remaining safe working window
+    (after subtracting an estimate of the prompt and tool schemas), capped at
+    4096 so huge-context models do not ask for impractically long replies.
+    setting>0 is a user cap, still bounded by the available headroom.
 
     The estimate is char/4 (same heuristic as ContextTracker); imprecise
     but consistent. We leave a 15% margin for tokeniser slop."""
     AUTO_FLOOR = 512
     AUTO_CEILING = 4096
-    if setting is not None and setting > 0:
-        return setting
-    window = model.context_window or 8192
-    char_total = 0
-    for m in messages:
-        content = m.get("content") or ""
-        if isinstance(content, str):
-            char_total += len(content)
-        for tc in m.get("tool_calls", []) or []:
-            fn = tc.get("function") or {}
-            char_total += len(fn.get("name", "") or "")
-            char_total += len(fn.get("arguments", "") or "")
-    prompt_estimate = int(char_total / 4.0)
+    window = safe_working_window(model.context_window)
+    prompt_estimate = int(estimate_messages(messages) + estimate_tools(tools))
     headroom = window - prompt_estimate
     budget = int(headroom * 0.85)
+    # Never advertise an output budget larger than the estimated remaining
+    # window. Explicit settings are caps, not instructions to overflow.
+    if setting is not None and setting > 0:
+        return max(32, min(setting, max(32, budget)))
     if budget < AUTO_FLOOR:
-        budget = AUTO_FLOOR
+        budget = max(32, budget)
     if budget > AUTO_CEILING:
         budget = AUTO_CEILING
     return budget
@@ -403,14 +475,17 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
     send it under both `reasoning_effort` (OpenAI shape) and
     `reasoning.effort` (llama.cpp / some compat servers) so it lands on
     whichever the backend understands; servers ignore unknown fields."""
+    tool_schemas = schemas_for_model(tool_subset)
     payload: dict = {
         "model": model.alias,
         "messages": messages,
-        "tools": schemas_for_model(tool_subset),
+        "tools": tool_schemas,
         "tool_choice": "auto",
         "stream": True,
         "temperature": 0.5,   # lower than chat - we want decisive tool use
-        "max_tokens": _resolve_max_tokens(model, messages, max_tokens),
+        "max_tokens": _resolve_max_tokens(
+            model, messages, max_tokens, tools=tool_schemas,
+        ),
     }
     if reasoning_effort:
         payload["reasoning_effort"] = reasoning_effort
@@ -438,22 +513,40 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
     spinner_mode = "thinking"  # 'thinking' | 'reasoning' | 'stopped'
     interrupted = False
     printed_any = False
+    saw_event = False
 
     try:
         with client.stream("POST", "/chat/completions",
                            json=payload, timeout=None) as resp:
+            if resp.status_code >= 400:
+                body = resp.read().decode("utf-8", "replace").strip()
+                detail = body[:2000] or resp.reason_phrase
+                raise ModelRequestError(
+                    f"model server returned HTTP {resp.status_code}: {detail}",
+                    status_code=resp.status_code,
+                )
             for raw in resp.iter_lines():
                 if not raw or not raw.startswith("data: "):
                     continue
                 body = raw[6:]
                 if body == "[DONE]":
+                    saw_event = True
                     break
                 try:
                     d = json.loads(body)
                 except json.JSONDecodeError:
                     continue
-                delta = d["choices"][0].get("delta", {})
-                fr = d["choices"][0].get("finish_reason")
+                if d.get("error"):
+                    error = d["error"]
+                    if isinstance(error, dict):
+                        error = error.get("message") or json.dumps(error)
+                    raise ModelRequestError(str(error))
+                choices = d.get("choices") or []
+                if not choices:
+                    continue
+                saw_event = True
+                delta = choices[0].get("delta", {})
+                fr = choices[0].get("finish_reason")
                 if fr:
                     finish_reason = fr
                 content = delta.get("content")
@@ -503,11 +596,16 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
         # Re-raise so run_turn can stop iterating and the REPL returns
         # to the prompt.
         raise
+    except ModelRequestError:
+        if spinner_active:
+            status.stop()
+            spinner_active = False
+        raise
     except httpx.HTTPError as e:
         if spinner_active:
             status.stop()
             spinner_active = False
-        console.print(f"\n[red]✗ network error: {e}[/red]")
+        raise ModelRequestError(f"model server connection failed: {e}") from e
     finally:
         if spinner_active:
             status.stop()
@@ -516,6 +614,10 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
         # newline when nothing was printed (eg. tool-only response).
         if printed_any and not interrupted:
             console.print()
+    if not saw_event:
+        raise ModelRequestError(
+            "model server returned an empty or non-streaming response"
+        )
     if full_content:
         console.print()  # newline after streamed content
     if finish_reason == "length" and not interrupted and not accum_tools:
@@ -604,7 +706,9 @@ def run_turn(client: httpx.Client, model: ModelInfo,
              reasoning_effort: Optional[str] = None,
              nudge_on_no_action: bool = True,
              max_nudges: int = 1,
-             tool_subset: Optional[list[str]] = None) -> None:
+             tool_subset: Optional[list[str]] = None,
+             bash_deny: Optional[list[str]] = None,
+             before_completion: Optional[Callable[[], None]] = None) -> None:
     """Single user turn: may involve multiple model + tool iterations.
     Mutates `messages` in place. Raises KeyboardInterrupt back to the
     caller if the user hits Ctrl+C during the turn.
@@ -616,14 +720,22 @@ def run_turn(client: httpx.Client, model: ModelInfo,
     calls (the model narrated an action instead of performing it, a common
     weak-local-model failure), re-prompt imperatively up to `max_nudges` times.
     Disabled automatically once the model signals completion (says DONE or the
-    content reads like a final answer with no pending action)."""
+    content reads like a final answer with no pending action).
+
+    `bash_deny` (optional) is a list of regex strings; a bash command matching
+    any is refused with a policy error. Used by embedders to forbid e.g.
+    package installs in an autonomous run. The standalone REPL passes None."""
     import asyncio
 
     sink = _as_sink(console)
+    deny_patterns = [re.compile(p) for p in (bash_deny or [])]
 
     async def _go():
         nudges_used = 0
+        repeat_guard = RepeatGuard()
         for _ in range(MAX_TOOL_ITERATIONS):
+            if before_completion is not None:
+                before_completion()
             content, tool_calls = await _stream_one_completion(
                 client, model, messages, console,
                 show_thoughts=show_thoughts,
@@ -672,8 +784,21 @@ def run_turn(client: httpx.Client, model: ModelInfo,
                 else:
                     console.print()
                 sink.on_tool_call(name, args)
+                _tool = by_name(name)
+                if _tool is not None and repeat_guard.is_repeat(
+                        name, args, _tool.mutating):
+                    result = repeat_guard.stub_result()
+                    console.print(f"[yellow]   ↺ {name} (identical repeat suppressed)[/yellow]")
+                    sink.on_tool_result(name, True, result)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": json.dumps(result, ensure_ascii=False),
+                    })
+                    continue
                 ok, reason = _gate_tool_call(console, name, args,
-                                              bypass_perms, workdir)
+                                              bypass_perms, workdir,
+                                              bash_deny=deny_patterns)
                 if not ok:
                     result = {"ok": False, "error": reason}
                     console.print(f"[yellow]   ⚠ {reason}[/yellow]")
@@ -691,10 +816,23 @@ def run_turn(client: httpx.Client, model: ModelInfo,
                     else:
                         console.print(f"[red]   ✗ {name}: {result.get('error')}[/red]")
                 sink.on_tool_result(name, bool(result.get("ok")), result)
+                context_result = result
+                try:
+                    serialized = json.dumps(result, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    serialized = str(result)
+                if len(serialized) > 12000:
+                    context_result = bound_json_value(result, 11600)
+                    if isinstance(context_result, dict):
+                        context_result["_context_truncated"] = True
+                        context_result["_context_note"] = (
+                            "full result was delivered to the event sink but "
+                            "bounded in model context"
+                        )
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "content": json.dumps(result, ensure_ascii=False),
+                    "content": json.dumps(context_result, ensure_ascii=False),
                 })
             # Loop back: model gets to read tool results and decide next.
         console.print("[yellow]   ⚠ hit max tool iterations, stopping[/yellow]")

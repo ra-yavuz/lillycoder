@@ -8,11 +8,11 @@ Storage layout, per cwd:
         20260506T194000-legacy.jsonl
       state.json                              # {"active": "<filename>"}
 
-Each session file is jsonl: one message per line, {"role": ..., "content": ...}.
-Loading a session means reading back its messages and prepending the
-current system prompt (which is owned by the persona system, not the
-session). Sessions are append-only on the wire: a new turn appends to
-the active session.
+Each session file is jsonl. User and assistant records preserve the lossless
+chat transcript. A later ``snapshot`` record stores the bounded working set
+created by context compaction. Loading starts from the newest snapshot and
+then applies newer records, so restarts do not inflate the model context back
+to the full archive. The original records remain on disk for recovery.
 
 Migration: an existing pre-0.2.0 layout (.lillycoder/history.jsonl)
 gets renamed once into sessions/legacy-<date>.jsonl and that becomes
@@ -342,10 +342,50 @@ def append_message(path: Path, role: str, content: str) -> None:
                            ensure_ascii=False) + "\n")
 
 
+def _snapshot_content(content) -> str:
+    """Reduce multimodal API content to durable human-readable text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(str(item.get("text") or ""))
+            elif isinstance(item, dict):
+                parts.append(f"[{item.get('type', 'attachment')} omitted from snapshot]")
+        return "\n".join(parts)
+    return str(content or "")
+
+
+def append_snapshot(path: Path, messages: list[dict]) -> None:
+    """Append a compact working-set checkpoint without deleting history."""
+    from .context import memory_from_messages
+
+    recent = []
+    for message in messages[1:]:
+        role = message.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        content = _snapshot_content(message.get("content"))
+        if not content:
+            continue
+        recent.append({"role": role, "content": content})
+    record = {
+        "role": "snapshot",
+        "memory": memory_from_messages(messages),
+        "messages": recent,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 def load_messages(path: Optional[Path], system_prompt: str) -> list[dict]:
     """Read a session file's user/assistant messages and prepend the
     current system prompt. If path is None or missing, return just
     the system prompt."""
+    from .context import system_with_memory
+
     msgs = [{"role": "system", "content": system_prompt}]
     if path is None or not path.exists():
         return msgs
@@ -358,7 +398,28 @@ def load_messages(path: Optional[Path], system_prompt: str) -> list[dict]:
                     d = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if d.get("role") in ("user", "assistant"):
+                if d.get("role") == "snapshot":
+                    memory = d.get("memory")
+                    recent = d.get("messages")
+                    if not isinstance(memory, str) or not isinstance(recent, list):
+                        continue
+                    restored = []
+                    for message in recent:
+                        if not isinstance(message, dict):
+                            continue
+                        if message.get("role") not in ("user", "assistant"):
+                            continue
+                        if not isinstance(message.get("content"), str):
+                            continue
+                        restored.append({
+                            "role": message["role"],
+                            "content": message["content"],
+                        })
+                    msgs = [{
+                        "role": "system",
+                        "content": system_with_memory(system_prompt, memory),
+                    }, *restored]
+                elif d.get("role") in ("user", "assistant"):
                     msgs.append({"role": d["role"], "content": d["content"]})
     except OSError:
         return msgs

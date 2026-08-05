@@ -150,7 +150,7 @@ def main():
     rows = []
     with acquire_engine(args.model, console) as (model, client):
         for i, (rid, label, prompt, level) in enumerate(MATRIX, 1):
-            # Vision row only relevant for vision models — skip otherwise.
+            # Vision row only relevant for vision models; skip otherwise.
             if rid == "V11" and "vl" not in args.model.lower():
                 rows.append({
                     "id": rid, "label": label, "level": level,
@@ -186,13 +186,13 @@ def main():
     for r in rows:
         lines.append(
             f"| {r['id']} | {r['level']} | {r['label']} | "
-            f"{', '.join(r.get('tool_calls', [])) or '—'} | "
+            f"{', '.join(r.get('tool_calls', [])) or '-'} | "
             f"{r.get('elapsed_s', 0):.1f}s | "
             f"{'✓' if r.get('ok') else '✗'} |"
         )
     lines.append("")
     for r in rows:
-        lines.append(f"## {r['id']} — {r['label']}")
+        lines.append(f"## {r['id']}: {r['label']}")
         lines.append(f"_{r['level']}, {r.get('elapsed_s', 0):.1f}s_")
         if not r.get("ok"):
             lines.append(f"\n**ERROR:** {r.get('error', 'unknown')}")

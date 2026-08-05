@@ -23,7 +23,7 @@ from rich.markdown import Markdown
 
 import time
 
-from .agent import run_turn
+from .agent import ModelRequestError, run_turn
 from . import config as _config
 from .config import (
     load_persona,
@@ -37,11 +37,17 @@ from .config import (
     BUNDLED_PERSONAS_DIR,
     PERSONAS_DIR,
 )
-from .context import ContextTracker
+from .context import ContextTracker, memory_from_messages, safe_working_window
 from .endpoint import acquire
+from .toolcheck import tools_for_prompt
 from .pinned import run_with_pinned_toolbar
-from .sessions import SessionStore, append_message, load_messages
-from .tools.registry import all_tools
+from .sessions import (
+    SessionStore,
+    append_message,
+    append_snapshot,
+    load_messages,
+)
+from .tools.registry import all_tools, schemas_for_model
 from .tools import persona as persona_tool
 from .tools import persona_admin
 
@@ -50,8 +56,12 @@ SLASH_HELP = """
 slash commands:
   /help                       this message
   /exit                       leave (also: ctrl+d, or ctrl+c twice)
-  /clear                      start a new session (old one stays in /session list)
+  /new [label]                start a fresh conversation
+  /sessions                   list conversations in this folder
+  /resume <number|label>      resume a listed conversation
+  /clear                      alias for /new cleared
   /compact                    summarise older history into a system note
+  /context                    show live context and durable-memory usage
   /tools                      list tools the model can call
   /image <path>               attach an image to your next message (multimodal models)
   /audio <path>               attach an audio clip to your next message (multimodal models)
@@ -78,7 +88,7 @@ persona system (unified namespace, all subcommands of /persona):
 
 session settings (persisted in ~/.config/lillycoder/config.toml):
   /thoughts [on|off]          toggle showing the model's <think> tokens
-  /autocompact [on|off]       toggle automatic compaction at 90% context
+  /autocompact [on|off]       toggle automatic working-memory compaction
   /max-tokens [auto|<n>]      per-reply token cap. examples: auto, 256,
                               1024, 4096, 8192. 'auto' is computed from
                               the model's context window so reasoning
@@ -99,6 +109,10 @@ deprecated (still work, but use the /persona namespace instead):
 
 # Window in which a second Ctrl+C is interpreted as "yes, really exit".
 _DOUBLE_INTERRUPT_S = 2.0
+
+
+class ContextCapacityError(RuntimeError):
+    """The live context needs compaction, but automatic compaction is off."""
 
 
 def _line_history_path() -> Path:
@@ -180,7 +194,9 @@ def run_repl(api_url: Optional[str] = None,
             # user sends a message in a fresh folder. Until then,
             # active() is None and we just have the system prompt.
             messages = load_messages(store.active(), system_prompt)
-            ctx = ContextTracker(model_window=model.context_window or 8192)
+            ctx = ContextTracker(
+                model_window=safe_working_window(model.context_window),
+            )
             ctx.refresh(messages)
             # Files staged by /image and /audio, attached to the next message.
             pending_attachments: list[Path] = []
@@ -245,6 +261,53 @@ def run_repl(api_url: Optional[str] = None,
             except ValueError:
                 reasoning_effort = "low"
 
+            active_tool_subset = tools_for_prompt("")
+            tool_schemas = schemas_for_model(active_tool_subset)
+
+            def _ensure_context_capacity() -> None:
+                """Run before every model completion, including tool loops."""
+                reserve = min(max_tokens or 2048, 4096)
+                ctx.refresh(messages)
+                if not ctx.needs_compaction(
+                    messages, tools=tool_schemas, reserve_tokens=reserve,
+                ):
+                    return
+                request_pct = ctx.request_percent(messages, tool_schemas)
+                if not autocompact:
+                    raise ContextCapacityError(
+                        f"request context is {request_pct:.0f}% full and "
+                        "automatic compaction is off"
+                    )
+                console.print(
+                    f"[yellow]   context at {request_pct:.0f}% before the next "
+                    f"model step; compacting working memory...[/yellow]"
+                )
+                changed = ctx.compact(
+                    messages, system_prompt, client, model,
+                    keep_last_turns=2,
+                )
+                # If the recent two turns are themselves too large, fold one
+                # more turn into memory before risking a rejected request.
+                if ctx.needs_compaction(
+                    messages, tools=tool_schemas, reserve_tokens=reserve,
+                ):
+                    changed = ctx.compact(
+                        messages, system_prompt, client, model,
+                        keep_last_turns=1,
+                    ) or changed
+                after_pct = ctx.request_percent(messages, tool_schemas)
+                if changed:
+                    console.print(
+                        f"[dim]   ✓ working context reduced to {after_pct:.0f}% "
+                        f"({ctx.last_compaction_kind}); full history remains "
+                        f"on disk[/dim]"
+                    )
+                if after_pct >= 94:
+                    raise ContextCapacityError(
+                        f"the current turn still needs {after_pct:.0f}% of the "
+                        "model window after safe trimming"
+                    )
+
             # Hook the set_persona tool so the model can rewrite the
             # current system prompt. The hook is closed over the local
             # state below; we update it via the nonlocal-capturing
@@ -253,11 +316,7 @@ def run_repl(api_url: Optional[str] = None,
             def _persona_hook(text: str) -> dict:
                 nonlocal system_prompt, persona
                 system_prompt = text
-                if messages and messages[0].get("role") == "system":
-                    messages[0]["content"] = system_prompt
-                else:
-                    messages.insert(0, {"role": "system", "content": system_prompt})
-                ctx.refresh(messages)
+                ctx.replace_system_prompt(messages, system_prompt)
                 # Persist to disk if persona-evolve is on. Save under the
                 # current persona name (or "evolved" if it's "default" so
                 # we never clobber the bundled file).
@@ -304,14 +363,7 @@ def run_repl(api_url: Optional[str] = None,
                             "error": "persona text is empty"}
                 system_prompt = new_text
                 persona = name
-                if messages and messages[0].get("role") == "system":
-                    messages[0]["content"] = system_prompt
-                else:
-                    messages.insert(
-                        0,
-                        {"role": "system", "content": system_prompt},
-                    )
-                ctx.refresh(messages)
+                ctx.replace_system_prompt(messages, system_prompt)
                 _remember_persona(persona)
                 return {"ok": True, "active": persona,
                         "chars": len(system_prompt)}
@@ -405,7 +457,7 @@ def run_repl(api_url: Optional[str] = None,
             console.print(
                 f"🦊 [bold magenta]lilly[/bold magenta] is awake in "
                 f"[dim]{workdir}[/dim] · "
-                f"[dim]/help · /exit · ctrl+d to leave · ctrl+c twice[/dim]"
+                f"[dim]/help · /new · /sessions · /exit[/dim]"
             )
             console.rule(style="grey39")
 
@@ -445,6 +497,21 @@ def run_repl(api_url: Optional[str] = None,
                     if cmd == "/help":
                         console.print(SLASH_HELP, style="grey78")
                         continue
+
+                    # Short, discoverable conversation commands. The older
+                    # /session namespace remains available for scripting and
+                    # muscle memory.
+                    if cmd == "/new":
+                        tail = user_input[len("/new"):].strip()
+                        user_input = ("/session new " + tail).strip()
+                        cmd = "/session"
+                    elif cmd == "/sessions":
+                        user_input = "/session list"
+                        cmd = "/session"
+                    elif cmd == "/resume":
+                        tail = user_input[len("/resume"):].strip()
+                        user_input = ("/session load " + tail).strip()
+                        cmd = "/session"
 
                     # Legacy-command rewriter. Translates the old
                     # commands (/personas, /setpersona, /persona-active,
@@ -511,10 +578,38 @@ def run_repl(api_url: Optional[str] = None,
                         continue
                     if cmd == "/compact":
                         try:
-                            ctx.compact(messages, system_prompt, client, model)
-                            console.print("[dim]✓ compacted[/dim]")
+                            changed = ctx.compact(
+                                messages, system_prompt, client, model,
+                                keep_last_turns=1,
+                            )
+                            active = store.active()
+                            if changed and active is not None and active.exists():
+                                append_snapshot(active, messages)
+                            if changed:
+                                console.print(
+                                    "[dim]✓ compacted; full history remains in "
+                                    "the session archive[/dim]"
+                                )
+                            else:
+                                console.print("[dim]nothing old enough to compact[/dim]")
                         except Exception as e:
                             console.print(f"[red]✗ compact failed: {e}[/red]")
+                        continue
+                    if cmd == "/context":
+                        ctx.refresh(messages)
+                        request_pct = ctx.request_percent(messages, tool_schemas)
+                        memory_chars = len(memory_from_messages(messages))
+                        console.print(
+                            f"[dim]working messages: {len(messages) - 1} · "
+                            f"request estimate: {request_pct:.0f}% of "
+                            f"{ctx.window} tokens · durable memory: "
+                            f"{memory_chars} chars · compactions this run: "
+                            f"{ctx.compactions}[/dim]"
+                        )
+                        console.print(
+                            "[dim]the lossless conversation archive stays under "
+                            ".lillycoder/sessions/[/dim]"
+                        )
                         continue
                     if cmd == "/persona":
                         rest_after_cmd = user_input[len("/persona"):].strip()
@@ -567,11 +662,7 @@ def run_repl(api_url: Optional[str] = None,
                         system_prompt = new_prompt
                         persona = new_label
                         _remember_persona(persona)
-                        if messages and messages[0].get("role") == "system":
-                            messages[0]["content"] = system_prompt
-                        else:
-                            messages.insert(0, {"role": "system", "content": system_prompt})
-                        ctx.refresh(messages)
+                        ctx.replace_system_prompt(messages, system_prompt)
                         console.print(f"[dim]✓ persona set ({new_label}, {len(system_prompt)} chars)[/dim]")
                         continue
                     if cmd in ("/personalities", "/persona"):
@@ -638,11 +729,7 @@ def run_repl(api_url: Optional[str] = None,
                             system_prompt = new_prompt
                             persona = target
                             _remember_persona(persona)
-                            if messages and messages[0].get("role") == "system":
-                                messages[0]["content"] = system_prompt
-                            else:
-                                messages.insert(0, {"role": "system", "content": system_prompt})
-                            ctx.refresh(messages)
+                            ctx.replace_system_prompt(messages, system_prompt)
                             console.print(f"[dim]✓ persona set ({target}, {len(system_prompt)} chars)[/dim]")
                             continue
                         if sub == "add":
@@ -1119,24 +1206,10 @@ def run_repl(api_url: Optional[str] = None,
                     console.print(f"[yellow]unknown: {cmd} - try /help[/yellow]")
                     continue
 
-                # Auto-compact at 90% (unless disabled).
-                if ctx.percent() >= 90:
-                    if autocompact:
-                        console.print(
-                            "[yellow]   context nearly full - auto-compacting before turn...[/yellow]"
-                        )
-                        try:
-                            ctx.compact(messages, system_prompt, client, model)
-                        except Exception as e:
-                            console.print(f"[red]   ✗ auto-compact failed: {e}[/red]")
-                    else:
-                        console.print(
-                            "[yellow]   ⚠ context >90% full and autocompact is off; "
-                            "the model may truncate. Use /compact to compact now, "
-                            "/autocompact on to re-enable.[/yellow]"
-                        )
-
                 # Chat turn - agent loop with tool dispatch.
+                active_tool_subset = tools_for_prompt(user_input)
+                tool_schemas = schemas_for_model(active_tool_subset)
+                compactions_before_turn = ctx.compactions
                 if pending_attachments:
                     content = _multimodal_content(user_input, pending_attachments)
                     names = ", ".join(p.name for p in pending_attachments)
@@ -1153,29 +1226,77 @@ def run_repl(api_url: Optional[str] = None,
                     active = store.new(label=label_seed[:40])
                 append_message(active, "user", user_input)
                 console.print()  # blank line before reply
-                try:
-                    def _do_turn() -> None:
-                        run_turn(client, model, messages, console,
-                                 bypass_perms=bypass_perms, workdir=workdir,
-                                 show_thoughts=show_thoughts,
-                                 max_tokens=max_tokens,
-                                 reasoning_effort=reasoning_effort)
+
+                def _do_turn() -> None:
+                    run_turn(
+                        client, model, messages, console,
+                        bypass_perms=bypass_perms, workdir=workdir,
+                        show_thoughts=show_thoughts,
+                        max_tokens=max_tokens,
+                        reasoning_effort=reasoning_effort,
+                        tool_subset=active_tool_subset,
+                        before_completion=_ensure_context_capacity,
+                    )
+
+                def _run_visible_turn() -> None:
                     # When LILLY_TOOLBAR_PIN=1 (and the terminal looks
-                    # capable), run_with_pinned_toolbar holds an async
-                    # prompt_toolkit Application around the turn so the
-                    # bottom toolbar stays pinned through streaming
-                    # output. Default off; falls back to plain
-                    # _do_turn() otherwise.
+                    # capable), keep the toolbar pinned through streaming.
                     run_with_pinned_toolbar(_do_turn, _bottom_toolbar)
+
+                try:
+                    _run_visible_turn()
+                except ContextCapacityError as e:
+                    console.print(f"[yellow]   ⚠ {e}[/yellow]")
+                    console.print(
+                        "[dim]   use /compact or /autocompact on; the REPL "
+                        "is still active and no oversized request was sent[/dim]"
+                    )
+                except ModelRequestError as e:
+                    recovered = False
+                    if e.context_related and autocompact:
+                        console.print(
+                            "[yellow]   model rejected the context; creating a "
+                            "local recovery checkpoint and retrying once...[/yellow]"
+                        )
+                        changed = ctx.compact(
+                            messages, system_prompt, client=None, model=model,
+                            keep_last_turns=1, use_model=False,
+                        )
+                        if changed:
+                            try:
+                                _run_visible_turn()
+                                recovered = True
+                            except (ModelRequestError, ContextCapacityError) as retry_error:
+                                e = retry_error
+                    if not recovered:
+                        if isinstance(e, ModelRequestError) and e.oom_related:
+                            console.print(
+                                f"[red]   ✗ model server ran out of memory: {e}[/red]"
+                            )
+                            console.print(
+                                "[dim]   LillyCoder stayed open. A Hydra model "
+                                "started by the updated launcher uses a bounded "
+                                "context and one inference slot.[/dim]"
+                            )
+                        else:
+                            console.print(f"[red]   ✗ model request failed: {e}[/red]")
+                            console.print(
+                                "[dim]   the conversation is intact; check the "
+                                "endpoint and send the request again[/dim]"
+                            )
                 except KeyboardInterrupt:
                     # Turn was cut short. Stay in the REPL; reset the
                     # double-tap window so the same Ctrl+C that stopped
                     # the model doesn't also pre-arm an exit.
                     last_interrupt = 0.0
-                # Persist any new assistant + tool messages from this turn.
-                # (We re-write a slim version that stores only chat
-                # messages, not tool-call internals - those are session-local.)
+                # Persist the latest assistant response. If compaction happened
+                # at any point in a multi-tool turn, append a bounded snapshot
+                # after it so a restart loads the compact working set instead
+                # of reinflating the complete archive.
                 _persist_assistant_msgs(active, messages)
+                ctx.refresh(messages)
+                if ctx.compactions > compactions_before_turn:
+                    append_snapshot(active, messages)
                 console.print()
 
             return 0
@@ -1185,9 +1306,14 @@ def run_repl(api_url: Optional[str] = None,
 
 
 def _persist_assistant_msgs(session_path: Path, messages: list[dict]) -> None:
-    """Append only the most recent assistant content message (no tool internals)."""
-    # Find the latest assistant message with non-empty string content.
-    for m in reversed(messages):
+    """Append the assistant reply following the latest user-side message."""
+    last_user = -1
+    for index, message in enumerate(messages):
+        if message.get("role") == "user":
+            last_user = index
+    if last_user < 0:
+        return
+    for m in reversed(messages[last_user + 1:]):
         if m.get("role") == "assistant" and isinstance(m.get("content"), str) and m["content"]:
             append_message(session_path, "assistant", m["content"])
             return

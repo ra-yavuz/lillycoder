@@ -31,6 +31,12 @@ jobs:
               || { echo "  syntax fail: $f"; fail=1; }
           done < <(find lib/lillycoder tests -name '*.py' 2>/dev/null)
           exit $fail
+      - name: Install runtime dependencies
+        run: python -m pip install -e .
+      - name: Unit and regression tests
+        run: |
+          python tests/test_m0a_patches.py
+          python tests/test_resilience.py
       - name: Lint shell scripts (best-effort)
         run: |
           if command -v shellcheck >/dev/null 2>&1; then

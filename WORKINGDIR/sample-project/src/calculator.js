@@ -12,7 +12,7 @@ function multiply(a, b) {
   return a * b;
 }
 
-// BUG: doesn't guard against b === 0 — caller can crash with Infinity/NaN.
+  // BUG: doesn't guard against b === 0; caller can crash with Infinity/NaN.
 // Lilly should spot this and add a check.
 function divide(a, b) {
   return a / b;

@@ -5,15 +5,15 @@ deliberately broken stuff in here for her to find and fix.
 
 ## what's in here
 
-- `src/calculator.js` — adds + subtracts. There's a bug in the divide
+- `src/calculator.js`: adds + subtracts. There's a bug in the divide
   function (try `lilly: find any obvious bugs in calculator.js`).
-- `src/server.js` — a tiny http server. Has no error handling.
-- `src/util.py` — a small utility script. Has a `TODO` comment that
+- `src/server.js`: a tiny http server. Has no error handling.
+- `src/util.py`: a small utility script. Has a `TODO` comment that
   should get done.
-- `data/users.csv` — 10 fake user rows. Try `lilly: how many users have
+- `data/users.csv`: 10 fake user rows. Try `lilly: how many users have
   emails ending in @gmail.com?`
-- `data/log.txt` — a few hundred fake log lines, mix of INFO/WARN/ERROR.
-- `notes/TODO.md` — a list of things to do.
+- `data/log.txt`: a few hundred fake log lines, mix of INFO/WARN/ERROR.
+- `notes/TODO.md`: a list of things to do.
 
 ## ideas to try
 

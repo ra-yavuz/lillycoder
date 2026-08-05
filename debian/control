@@ -18,7 +18,7 @@ Depends: ${misc:Depends},
  python3-rich,
  python3-pydantic
 Recommends: ripgrep
-Suggests: nodejs, npm
+Suggests: nodejs, npm, hydra-llm
 Description: local-first coder REPL with file and shell tools
  lillycoder drops you into a chat REPL inside any folder. The model on the
  other end can read, write, and edit files, run shell commands, install
@@ -31,9 +31,9 @@ Description: local-first coder REPL with file and shell tools
  be bypassed by the permission flag and is enforced by an upfront safety
  classifier.
  .
- lillycoder does not start LLM servers, manage Docker, or ship a model. It
- expects a server already running, scans common ports on first run
- (11434, 8080, 1234, 18080, 8201), and offers to use whatever it finds.
+ lillycoder does not ship or download models. It scans local endpoints and,
+ when the optional hydra-llm package is installed, can list downloaded Hydra
+ models and delegate starting the selected one.
  .
  DISCLAIMER: provided AS IS, no warranty. The LLM can read, write, and
  delete files in the current working directory and run shell commands.

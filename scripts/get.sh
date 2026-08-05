@@ -13,9 +13,9 @@
 #   less get.sh
 #   sudo bash get.sh
 #
-# After install, run 'lillycoder' inside any project directory. lillycoder
-# expects an OpenAI-compatible /v1 endpoint to be running already (llama.cpp,
-# ollama, LM Studio, etc). It does not start an LLM server for you.
+# After install, run 'lillycoder' inside any project directory. It finds local
+# OpenAI-compatible endpoints. If hydra-llm is installed, it can list Hydra's
+# downloaded models and start the one you select.
 #
 # DISCLAIMER: lillycoder runs an LLM that can read, write, and delete files
 # in the current working directory and run shell commands. It is provided
@@ -87,7 +87,7 @@ echo
 echo "  Future upgrades: sudo apt upgrade"
 echo "  Full removal:    sudo apt purge lillycoder"
 echo
-echo "  lillycoder needs an OpenAI-compatible /v1 endpoint running"
-echo "  somewhere reachable (llama.cpp, ollama, LM Studio, hydra-llm,"
-echo "  etc). It does not ship or start a model for you."
+echo "  lillycoder works with any OpenAI-compatible /v1 endpoint."
+echo "  With hydra-llm installed it can also list downloaded models"
+echo "  and start the one you select. It never downloads a model itself."
 echo

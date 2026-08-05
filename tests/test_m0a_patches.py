@@ -84,6 +84,83 @@ def test_in_workdir_resolves_relative_to_workdir(tmp_path=None):
     assert os.getcwd() == start
 
 
+def test_read_file_windows_large_files():
+    # A large file must come back as a bounded window with a how-to-proceed
+    # hint, never whole: a 200KB read into a 16K context destroyed agent
+    # turns (observed live against a 4,500-line file: the model re-read the
+    # whole file every repair round and never got to edit).
+    import tempfile
+    from lillycoder.tools.read import _handler, DEFAULT_MAX_BYTES
+    big = tempfile.NamedTemporaryFile("w", suffix=".py", delete=False)
+    for i in range(1, 3001):
+        big.write(f"line_{i} = {i}\n")
+    big.close()
+    r = _handler(big.name)
+    assert r["ok"] and r["truncated"], r
+    assert len(r["content"].encode()) <= DEFAULT_MAX_BYTES, len(r["content"])
+    assert "grep" in r["hint"] and "start_line" in r["hint"], r["hint"]
+    assert r["total_lines"] == 3000, r["total_lines"]
+    # a window lands exactly where asked
+    w = _handler(big.name, start_line=2000, max_lines=5)
+    assert w["content"].startswith("line_2000"), w["content"][:40]
+    assert w["truncated"], "a partial view must say so"
+    # small files are unaffected
+    small = tempfile.NamedTemporaryFile("w", suffix=".py", delete=False)
+    small.write("x = 1\n")
+    small.close()
+    s = _handler(small.name)
+    assert s["ok"] and not s["truncated"], s
+
+
+def test_repeat_guard_suppresses_read_loops_but_not_verification():
+    # Identical read-only calls within a turn are answered with a stub
+    # (observed live: a worker re-read the same 400-line region three times
+    # and died of context bloat instead of editing). A mutating call resets
+    # the guard so the edit-then-re-read verification pattern keeps working.
+    from lillycoder.agent import RepeatGuard
+    g = RepeatGuard()
+    assert g.is_repeat("read_file", {"path": "a.py"}, mutating=False) is False
+    assert g.is_repeat("read_file", {"path": "a.py"}, mutating=False) is True
+    assert g.is_repeat("read_file", {"path": "b.py"}, mutating=False) is False
+    # different args are not a repeat
+    assert g.is_repeat("read_file", {"path": "a.py", "start_line": 50},
+                       mutating=False) is False
+    # an edit resets: re-reading the same file afterwards is legitimate
+    assert g.is_repeat("edit_file", {"path": "a.py"}, mutating=True) is False
+    assert g.is_repeat("read_file", {"path": "a.py"}, mutating=False) is False
+    stub = g.stub_result()
+    assert stub["ok"] and stub["repeat_suppressed"] and "edit_file" in stub["note"]
+
+
+def test_bash_deny_policy_blocks_matching_commands():
+    # An embedder (e.g. an orchestrator) can forbid bash commands by regex
+    # without touching the always-on safety classifier or affecting the
+    # standalone REPL (which passes no deny list).
+    import re
+    from lillycoder.agent import _gate_tool_call
+    from pathlib import Path
+    deny = [re.compile(r"\bmake\b"), re.compile(r"\bpip\s+install\b")]
+    # matching commands are refused with a policy reason
+    ok, reason = _gate_tool_call(None, "bash", {"cmd": "make venv"},
+                                 bypass_perms=True, workdir=Path("."),
+                                 bash_deny=deny)
+    assert not ok and "policy" in reason, (ok, reason)
+    ok2, reason2 = _gate_tool_call(None, "bash", {"cmd": "pip install foo"},
+                                   bypass_perms=True, workdir=Path("."),
+                                   bash_deny=deny)
+    assert not ok2 and "policy" in reason2, (ok2, reason2)
+    # a non-matching command is NOT blocked by the policy layer (it may still
+    # hit the permission prompt, but the policy gate lets it through)
+    ok3, reason3 = _gate_tool_call(None, "bash", {"cmd": "python3 -m unittest"},
+                                   bypass_perms=True, workdir=Path("."),
+                                   bash_deny=deny)
+    assert ok3, (ok3, reason3)
+    # no deny list (standalone REPL) = no policy denial
+    ok4, _ = _gate_tool_call(None, "bash", {"cmd": "make venv"},
+                             bypass_perms=True, workdir=Path("."))
+    assert ok4, "standalone REPL must be unaffected by the policy layer"
+
+
 def _run():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0

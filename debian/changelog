@@ -1,3 +1,21 @@
+lillycoder (0.3.0-1) unstable; urgency=low
+
+  * Discover every running Hydra endpoint, including dynamically assigned
+    ports, and merge loopback aliases without duplicate choices.
+  * When no endpoint is running, offer downloaded hydra-llm models and start
+    the selected model by number or alias.
+  * Bound long sessions with conservative capacity checks before every model
+    step, durable summary memory, trimmed tool payloads, and persisted
+    compaction snapshots while retaining the full conversation archive.
+  * Add /new, /sessions, /resume, and /context conversation commands.
+  * Keep the REPL alive on model OOM or context errors and retry once after
+    local compaction rather than silently recording an empty response.
+  * Focus the exposed tool set by task, suppress repeated reads, and support
+    bounded line-window reads for large files.
+  * Expand regression coverage and run it in CI.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Wed, 05 Aug 2026 09:22:00 +0300
+
 lillycoder (0.2.2-1) unstable; urgency=low
 
   * Embeddable output sink: agent.run_turn now writes through a Sink

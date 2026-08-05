@@ -41,7 +41,7 @@ Priority: optional
 Architecture: all
 Depends: python3 (>= 3.10), python3-httpx, python3-prompt-toolkit, python3-rich, python3-pydantic
 Recommends: ripgrep
-Suggests: nodejs, npm
+Suggests: nodejs, npm, hydra-llm
 Maintainer: Ramazan Yavuz <yavuzramazan1994@gmail.com>
 Homepage: https://github.com/ra-yavuz/lillycoder
 Description: local-first coder REPL with file and shell tools
@@ -53,6 +53,9 @@ Description: local-first coder REPL with file and shell tools
  .
  Every mutating action is gated. Hard-banned commands (sudo, rm -rf /,
  mkfs, fork bombs) are refused even with --bypass-permissions.
+ .
+ lillycoder scans local endpoints and can use the optional hydra-llm command
+ to list downloaded models and start the one selected by the user.
  .
  DISCLAIMER: provided AS IS, no warranty. The LLM can read, write, and
  delete files in the current working directory and run shell commands.

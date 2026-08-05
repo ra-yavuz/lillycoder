@@ -1,6 +1,6 @@
 # lillycoder
 
-**A local-first coder REPL with a persona that evolves. Bring your own LLM.**
+**A local-first coding assistant for projects, analysis, code, and long conversations.**
 
 `lillycoder` drops you into a chat REPL inside any folder. The model on the other end can read, write, and edit files, run shell commands, install packages, and grep your project. It talks to any OpenAI-compatible `/v1` endpoint, so you pair it with whichever local LLM server you already use (llama.cpp, ollama, LM Studio, [hydra-llm](https://ra-yavuz.github.io/hydra-llm/)). No cloud. No API key. No telemetry. No account.
 
@@ -10,6 +10,9 @@ What sets lillycoder apart from other coder agents:
 - **The persona evolves.** Ask Lilly to rewrite her own persona, flip `/persona-evolve on`, and the current shape gets snapshotted to disk and refined across sessions. The next time you launch, she comes back as the version you grew, not the bundled default.
 - **Lilly manages her own personalities.** `add_persona`, `clone_persona`, `set_active_persona`, `set_evolve` are real tools the model can call. Tell her "make a pirate persona and switch to it" and she does it through tool calls, not by writing files into your repo.
 - **Smart token budgeting on thinking models.** `auto` mode is computed from your model's actual context window, so reasoning models get enough headroom to finish thinking AND emit visible content. Override with `/max-tokens <n>` whenever you want a hard cap.
+- **Bare startup is enough.** LillyCoder discovers every running Hydra port, even custom ports outside the old fixed list. If nothing is running and `hydra-llm` is installed, it lists downloaded models and lets you start one by number or alias.
+- **Long sessions stay bounded.** The complete conversation remains in the per-project session archive while Lilly keeps a compact working memory, clears bulky tool mechanics after use, checks capacity before every model step, and persists compaction snapshots across restarts.
+- **Focused tool calls.** Normal coding prompts expose a smaller coding-tool menu to weak local models. Package and persona tools appear when the request needs them, repeated reads are suppressed, and large reads are line-windowed.
 - **All local. Always.** lillycoder runs against any OpenAI-compatible server you point it at. It does not phone home, does not require an account, and does not depend on any cloud service.
 
 > ## Disclaimer / no warranty
@@ -45,7 +48,7 @@ The hard-deny safety list runs on top of that and cannot be turned off by the pe
 
 ## What it is NOT
 
-`lillycoder` does not start LLM servers, manage Docker, or ship a model. It expects a server to be running already at, say, `http://localhost:11434/v1` (ollama) or `http://localhost:8080/v1` (llama.cpp). On first run it scans common ports and offers to use whatever it finds; you can also pass `--api http://your.url`.
+`lillycoder` does not ship or download a model and does not manage Docker itself. It works directly with any running OpenAI-compatible endpoint. When the optional `hydra-llm` command is installed, LillyCoder can ask that model manager what is running and delegate starting one of its already-downloaded models.
 
 For the server side, see [hydra-llm](https://ra-yavuz.github.io/hydra-llm/) (sibling project, also under `ra-yavuz`).
 
@@ -114,7 +117,7 @@ Tested on **Ubuntu (Linux only)**. Should also work on **WSL2** Ubuntu / Debian 
 
 ## Quick start
 
-Have an LLM server running somewhere on localhost. Then in any project:
+In any project, just run:
 
 ```sh
 cd ~/myproject
@@ -125,12 +128,23 @@ Output:
 
 ```
 🦊 scanning localhost for LLM servers...
-🦊 found 1 endpoint: http://localhost:11434/v1 (ollama, 3 models)
-   use it? [Y/n] y
-✓ ollama · qwen2.5-coder:7b
-🦊 lilly is awake in /home/you/myproject · /help · /exit · ctrl+d to leave · ctrl+c twice
-🦊 qwen2.5-coder:7b · 1% of 8k · default · max:auto
+🦊 found http://localhost:18102/v1 (hydra:my-coder, 1 models)
+✓ hydra:my-coder · qwen-coder.gguf
+🦊 lilly is awake in /home/you/myproject · /help · /new · /sessions · /exit
 › what files are in this folder?
+```
+
+If no server is running and Hydra is installed, LillyCoder lists the models
+already downloaded by Hydra:
+
+```text
+🦊 Hydra model manager detected.
+   Choose a downloaded model for LillyCoder:
+   1. qwen-coder-9b       6.1 GB, fit: yes
+   2. local-code-27b      17.9 GB, fit: spill
+   model number or alias (Enter to cancel): 1
+   starting qwen-coder-9b with hydra-llm...
+✓ qwen-coder-9b is ready at http://127.0.0.1:18080/v1
 ```
 
 Or skip discovery and point at a known endpoint:
@@ -145,8 +159,12 @@ lillycoder --api http://localhost:8080/v1
 |---                                   |---|
 | `/help`                              | show all commands |
 | `/tools`                             | list tools the model can call |
-| `/clear`                             | wipe conversation, keep persona |
-| `/compact`                           | summarise older history into a system note |
+| `/new [label]`                       | start a fresh conversation and keep the old one |
+| `/sessions`                          | list conversations in this folder |
+| `/resume <number\|label>`            | resume a listed conversation |
+| `/clear`                             | alias for `/new cleared` |
+| `/compact`                           | checkpoint older history into durable working memory |
+| `/context`                           | show working-context and memory usage |
 | `/exit`                              | leave (or `Ctrl+D`) |
 | `/persona`                           | show the current persona text |
 | `/persona-active`                    | which persona is loaded right now (name + origin + path) |
@@ -162,7 +180,7 @@ lillycoder --api http://localhost:8080/v1
 | `/persona-evolve [on\|off]`          | snapshot the current persona and let it evolve over time |
 | `/max-tokens [auto\|<n>]`            | per-reply token cap. `auto` = computed from model context |
 | `/thoughts [on\|off]`                | show or hide the model's `<think>` tokens |
-| `/autocompact [on\|off]`             | toggle automatic compaction at 90% context fill |
+| `/autocompact [on\|off]`             | toggle automatic working-memory compaction |
 
 ## Personalities, plural
 
@@ -247,6 +265,26 @@ Set an explicit cap for crisp answers:
 
 Or via CLI: `lillycoder --max-tokens 4096`.
 
+## Long-session context
+
+LillyCoder treats the model context as working memory, not as the permanent
+chat record. The full conversation is appended to
+`.lillycoder/sessions/` in the project. Before every model completion,
+including follow-up tool calls, LillyCoder estimates the prompt plus tool
+schemas and compacts early enough to preserve reply headroom.
+
+Compaction keeps recent turns verbatim, folds older turns into a durable
+memory block, and replaces large tool payloads with short records after the
+model has used them. A compaction snapshot is persisted, so reopening the
+session does not inflate the prompt with the archived turns again. If the
+model cannot produce a summary, a deterministic local fallback still makes
+the request smaller. The live working window is conservatively capped at
+32K tokens even when a server advertises a much larger trained context.
+
+Use `/context` to inspect the current estimate, `/compact` to checkpoint
+manually, `/new` to begin a clean conversation, and `/sessions` plus
+`/resume` to return to an earlier one.
+
 ## Compatible servers
 
 Anything speaking the OpenAI `/v1/chat/completions` shape works. Tested:
@@ -260,19 +298,22 @@ The model on the other end matters: tool-calling reliability needs a model train
 
 ## Pairs with hydra-llm
 
-[hydra-llm](https://ra-yavuz.github.io/hydra-llm/) is a sibling project that manages local LLM servers: it wraps llama.cpp in Docker, ships a curated GGUF catalog with anonymous downloads, and exposes each running model as an OpenAI-compatible endpoint on a stable local port. lillycoder talks that exact shape, so the two compose into a fully local coding agent in one terminal:
+[hydra-llm](https://ra-yavuz.github.io/hydra-llm/) is a sibling project that manages local LLM servers: it wraps llama.cpp in Docker, ships a curated GGUF catalog with anonymous downloads, and exposes each running model as an OpenAI-compatible endpoint on a stable local port. With Hydra installed, the normal startup is simply:
 
 ```sh
-# in hydra-llm:
-hydra-llm start qwen2.5-32b           # or any 'code'-tagged model from list-online
-hydra-llm api   qwen2.5-32b           # prints the URL
-
-# in your project directory:
-lillycoder --api http://localhost:18087/v1
-# (lilly auto-detects common local LLM ports, so just `lillycoder` often works)
+cd ~/myproject
+lillycoder
 ```
 
-hydra-llm handles model lifecycle (download, start/stop, system prompts, persistent sessions, optional KDE Plasma 6 panel widget). lillycoder is the agent on top: file tools, shell tools, grep, permission gating, persona system. Use them together, or use lillycoder with whatever local server you already run.
+LillyCoder asks Hydra for every running endpoint, including dynamically
+assigned ports. If none is running, it lists Hydra's downloaded models and
+can start the one you select. `--api` remains available for any other local
+or remote OpenAI-compatible server.
+
+Hydra handles model downloads, lifecycle, safe llama.cpp resource settings,
+system prompts, persistent sessions, and its optional KDE Plasma 6 panel
+widget. LillyCoder is the coding assistant on top: project tools, permission
+gating, context management, conversations, and personas.
 
 ## Development
 
@@ -287,6 +328,13 @@ lillycoder --api http://host.docker.internal:11434/v1
 
 If she goes haywire, damage stays inside `WORKINGDIR/` on the host.
 
+Run the hermetic regression suites from the repository root:
+
+```sh
+PYTHONPATH=lib python3 tests/test_m0a_patches.py
+PYTHONPATH=lib python3 tests/test_resilience.py
+```
+
 ## Layout
 
 ```
@@ -297,11 +345,12 @@ lillycoder/
     discovery.py              scans localhost for /v1 endpoints
     endpoint.py               connection layer
     config.py                 XDG config + personas + max_tokens parser
-    context.py                token estimate, /compact, autocompact
+    context.py                bounded working context and durable memory
+    hydra.py                  optional hydra-llm command bridge
     permissions.py            per-tool [y/n/always] prompts
     safety.py                 hard-deny classifier
     spinner.py                small carriage-return spinner
-    repl.py                   prompt_toolkit loop, slash commands
+    repl.py                   prompt_toolkit loop, sessions, slash commands
     tools/                    one file per tool (incl. persona, persona_admin)
     persona/                  bundled personas (default, tsundere, ...)
   debian/                     debian packaging

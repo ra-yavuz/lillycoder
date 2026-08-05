@@ -40,3 +40,36 @@ _COMPILED = [re.compile(p, re.IGNORECASE) for p in TOOL_CAPABLE_PATTERNS]
 def is_tool_capable(model_name: str) -> bool:
     """Return True iff the model name matches a known tool-capable pattern."""
     return any(p.search(model_name) for p in _COMPILED)
+
+
+CODING_TOOLS = [
+    "read_file", "list_dir", "grep", "find", "write_file", "edit_file",
+    "bash", "mkdir", "mv", "rm",
+]
+PERSONA_TOOLS = [
+    "set_persona", "list_personas", "add_persona", "clone_persona",
+    "set_active_persona", "set_evolve",
+]
+
+
+def tools_for_prompt(prompt: str) -> list[str]:
+    """Keep weak-model tool menus focused without removing capabilities.
+
+    File and shell tools are always available. Package and persona tools are
+    added only when the user's request mentions those domains. This cuts the
+    normal coding menu from 17 schemas to 10 while preserving an escape path
+    through direct slash commands.
+    """
+    lower = prompt.lower()
+    chosen = list(CODING_TOOLS)
+    if re.search(
+        r"\b(install|package|dependency|dependencies|pip|npm|apt|yarn|pnpm)\b",
+        lower,
+    ):
+        chosen.append("pkg_install")
+    if re.search(
+        r"\b(persona|personality|personalities|evolve|tsundere|yandere)\b",
+        lower,
+    ):
+        chosen.extend(PERSONA_TOOLS)
+    return chosen

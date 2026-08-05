@@ -19,9 +19,12 @@ from rich.console import Console
 
 from . import config as _config
 from .config import load_persona, list_personas
+from .context import ContextTracker, safe_working_window
 from .endpoint import acquire
 from .sink import RecordingSink
+from .toolcheck import tools_for_prompt
 from .tools import registry  # noqa: F401  (force tool registration)
+from .tools.registry import schemas_for_model
 from . import agent
 
 
@@ -59,17 +62,39 @@ def run_headless(prompt: str,
 
     try:
         with acquire(api_url=api_url, preferred_model=model, force=force,
-                     console=console) as (model_info, client):
+                     interactive=False, console=console) as (model_info, client):
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ]
             sink = RecordingSink(echo=True)
+            effective_tool_subset = (
+                tool_subset if tool_subset is not None
+                else tools_for_prompt(prompt)
+            )
+            tracker = ContextTracker(
+                model_window=safe_working_window(model_info.context_window),
+            )
+            tool_schemas = schemas_for_model(effective_tool_subset)
+
+            def ensure_context() -> None:
+                if not tracker.needs_compaction(messages, tool_schemas):
+                    return
+                tracker.compact(
+                    messages, system_prompt, client, model_info,
+                    keep_last_turns=1,
+                )
+                if tracker.request_percent(messages, tool_schemas) >= 94:
+                    raise agent.ModelRequestError(
+                        "headless task exceeded the safe model context after trimming"
+                    )
+
             agent.run_turn(
                 client, model_info, messages, sink,
                 bypass_perms=bypass_perms, workdir=wd,
                 show_thoughts=False, max_tokens=max_tokens,
-                tool_subset=tool_subset,
+                tool_subset=effective_tool_subset,
+                before_completion=ensure_context,
             )
             # Final newline so piped output is clean.
             console.print()

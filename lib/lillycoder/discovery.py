@@ -1,8 +1,9 @@
 """Probe localhost for OpenAI-compatible /v1 endpoints.
 
-Lillycoder does not boot models. It expects a local LLM server to already
-be running somewhere on the machine (or to be told via --api). This module
-finds those servers automatically by probing well-known ports.
+LillyCoder accepts any OpenAI-compatible server. This module probes common
+ports and, when hydra-llm is installed, asks it for the actual ports of every
+running model. The Hydra lookup matters because custom aliases commonly live
+outside the original 18080 compatibility port.
 
 What we look for:
 
@@ -27,6 +28,7 @@ OpenAI-compatible /v1, it works.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Optional
 
@@ -61,6 +63,7 @@ class Endpoint:
     #   n_ctx_train  - max trained context length (best signal we have)
     #   n_ctx        - runtime context length (from llama.cpp /props if probed)
     model_meta: dict = None
+    tool_capable: Optional[bool] = None  # reported by server chat-template caps
 
     def __post_init__(self):
         if self.model_meta is None:
@@ -152,25 +155,33 @@ def _v1_models_to_endpoint(host: str, port: int, label: str,
     # context the server was actually started with, which can differ from
     # the model's trained max). If reachable, apply it to all models on
     # this endpoint - llama.cpp serves one model with one context.
-    runtime_ctx = _probe_llamacpp_runtime_ctx(host, port)
+    props = _probe_llamacpp_props(host, port)
+    runtime_ctx = _runtime_ctx_from_props(props)
     if runtime_ctx:
         for name in models:
             ep.model_meta.setdefault(name, {})["n_ctx"] = runtime_ctx
+    caps = props.get("chat_template_caps") if isinstance(props, dict) else None
+    if isinstance(caps, dict) and isinstance(caps.get("supports_tools"), bool):
+        ep.tool_capable = caps["supports_tools"]
     return ep
 
 
-def _probe_llamacpp_runtime_ctx(host: str, port: int,
-                                 timeout_s: float = 0.5) -> Optional[int]:
-    """llama.cpp llama-server exposes /props with default_generation_settings
-    containing n_ctx (the runtime context). Returns it, or None on miss."""
+def _probe_llamacpp_props(host: str, port: int,
+                          timeout_s: float = 0.5) -> dict:
+    """Best-effort llama.cpp /props response."""
     url = f"http://{host}:{port}/props"
     try:
         r = httpx.get(url, timeout=timeout_s)
         if r.status_code != 200:
-            return None
+            return {}
         d = r.json()
     except Exception:
-        return None
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def _runtime_ctx_from_props(d: dict) -> Optional[int]:
+    """Extract the active context length from a llama.cpp /props response."""
     # Various llama.cpp versions: top-level n_ctx, or
     # default_generation_settings.n_ctx, or generation_settings.n_ctx
     for path in (
@@ -189,6 +200,12 @@ def _probe_llamacpp_runtime_ctx(host: str, port: int,
         if ok and isinstance(cur, int) and cur > 0:
             return cur
     return None
+
+
+def _probe_llamacpp_runtime_ctx(host: str, port: int,
+                                 timeout_s: float = 0.5) -> Optional[int]:
+    """Compatibility wrapper returning only runtime n_ctx."""
+    return _runtime_ctx_from_props(_probe_llamacpp_props(host, port, timeout_s))
 
 
 def probe_one(host: str, port: int, path: str, label: str,
@@ -211,14 +228,45 @@ def probe_one(host: str, port: int, path: str, label: str,
 
 
 def discover(host: str = "localhost",
-             extra_probes: Optional[list[tuple[int, str, str, str]]] = None
+             extra_probes: Optional[list[tuple[int, str, str, str]]] = None,
+             include_hydra: bool = True,
              ) -> list[Endpoint]:
-    """Probe every known port. Returns list of live endpoints."""
-    probes = KNOWN_PROBES + (extra_probes or [])
+    """Probe known and Hydra-reported ports. Returns live endpoints.
+
+    Probes run concurrently. A dead port therefore costs roughly one timeout,
+    rather than one timeout multiplied by the size of the probe list.
+    """
+    probes = list(KNOWN_PROBES)
+    if include_hydra:
+        try:
+            from . import hydra
+            probes.extend(hydra.running_probes())
+        except Exception:
+            # Optional integration must never break generic discovery.
+            pass
+    probes.extend(extra_probes or [])
+
+    # Keep the first label for duplicate port/path pairs. Hydra-specific
+    # labels are preferred because they name the actual alias.
+    unique: dict[tuple[int, str], tuple[int, str, str, str]] = {}
+    for probe in probes:
+        port, path, label, field = probe
+        key = (port, path)
+        if key not in unique or label.startswith("hydra:"):
+            unique[key] = (port, path, label, field)
+    probes = list(unique.values())
+
+    def run_probe(probe):
+        port, path, label, _field = probe
+        return probe_one(host, port, path, label)
+
+    workers = min(16, max(1, len(probes)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(run_probe, probes))
+
     seen: set[str] = set()
     found: list[Endpoint] = []
-    for port, path, label, _field in probes:
-        ep = probe_one(host, port, path, label)
+    for ep in results:
         if ep and ep.base_url not in seen:
             seen.add(ep.base_url)
             found.append(ep)
@@ -259,10 +307,14 @@ def manual_endpoint(url: str) -> Endpoint:
         host_port = parsed.split("://", 1)[1]
         host, port_str = host_port.split(":", 1)
         port = int(port_str)
-        runtime_ctx = _probe_llamacpp_runtime_ctx(host, port)
+        props = _probe_llamacpp_props(host, port)
+        runtime_ctx = _runtime_ctx_from_props(props)
         if runtime_ctx:
             for name in models:
                 ep.model_meta.setdefault(name, {})["n_ctx"] = runtime_ctx
+        caps = props.get("chat_template_caps") if isinstance(props, dict) else None
+        if isinstance(caps, dict) and isinstance(caps.get("supports_tools"), bool):
+            ep.tool_capable = caps["supports_tools"]
     except (ValueError, IndexError):
         pass
     return ep
