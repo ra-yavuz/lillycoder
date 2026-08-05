@@ -6,6 +6,7 @@ or with pytest if available.
 """
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 
@@ -159,6 +160,72 @@ def test_bash_deny_policy_blocks_matching_commands():
     ok4, _ = _gate_tool_call(None, "bash", {"cmd": "make venv"},
                              bypass_perms=True, workdir=Path("."))
     assert ok4, "standalone REPL must be unaffected by the policy layer"
+
+
+def test_silent_tool_call_speaks_then_decline_returns_to_user():
+    """A bare tool call gets a preface, and 'no' ends the model loop.
+
+    The second call represents the kind of guessed alternative a local model
+    might batch behind the first one. It must be recorded as cancelled but
+    never gated or executed after the user refuses the first action.
+    """
+    tool_calls = [
+        {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+                "name": "mkdir",
+                "arguments": '{"path": "personas/dario"}',
+            },
+            "_parsed_args": {"path": "personas/dario"},
+        },
+        {
+            "id": "call_2",
+            "type": "function",
+            "function": {
+                "name": "mkdir",
+                "arguments": '{"path": "personas/dario_persona"}',
+            },
+            "_parsed_args": {"path": "personas/dario_persona"},
+        },
+    ]
+    messages = [{"role": "user", "content": "create a dario persona"}]
+    sink = RecordingSink()
+    completion = AsyncMock(return_value=("", tool_calls))
+
+    with patch.object(agent, "_stream_one_completion", completion), \
+            patch.object(agent, "_gate_tool_call",
+                         return_value=(False, agent.USER_DECLINED_REASON)) as gate:
+        agent.run_turn(
+            client=None,
+            model=None,
+            messages=messages,
+            console=sink,
+            bypass_perms=False,
+            workdir=Path("."),
+            nudge_on_no_action=False,
+        )
+
+    assert completion.await_count == 1, "decline must not re-enter the model"
+    assert gate.call_count == 1, "later calls must not prompt after a decline"
+    assert messages[1]["content"] == agent.SILENT_TOOL_PREFACE
+    assert messages[-1] == {
+        "role": "assistant",
+        "content": agent.USER_DECLINED_FOLLOWUP,
+    }
+    tool_results = [m for m in messages if m["role"] == "tool"]
+    assert len(tool_results) == 2
+    assert "cancelled" in tool_results[1]["content"]
+
+    kinds = [event["kind"] for event in sink.events]
+    assert kinds == [
+        "token", "tool_call", "tool_result", "tool_result", "token",
+        "turn_end",
+    ]
+    assert sink.events[-1]["stopped_reason"] == "user_declined"
+    assert sink.text == (
+        agent.SILENT_TOOL_PREFACE + agent.USER_DECLINED_FOLLOWUP
+    )
 
 
 def _run():

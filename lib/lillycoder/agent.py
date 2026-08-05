@@ -71,6 +71,18 @@ def _looks_complete(content: Optional[str]) -> bool:
 
 MAX_TOOL_ITERATIONS = 12
 
+# Some local models jump straight to a tool call without emitting any visible
+# text first. The terminal should still feel conversational, so the agent loop
+# supplies a short preface when the model did not provide one itself.
+SILENT_TOOL_PREFACE = "ok. i'll start on that."
+
+# A permission refusal is user input, not a recoverable tool error. Returning
+# to the model immediately makes small models guess at alternate paths or
+# names. End the turn instead and let the user explain what should change at
+# the normal prompt.
+USER_DECLINED_REASON = "user declined"
+USER_DECLINED_FOLLOWUP = "ok, i won't do that. what should i change?"
+
 
 class ModelRequestError(RuntimeError):
     """A model request failed without terminating the LillyCoder process."""
@@ -765,6 +777,7 @@ def run_turn(client: httpx.Client, model: ModelInfo,
     async def _go():
         nudges_used = 0
         repeat_guard = RepeatGuard()
+        conversation_prefaced = False
         for _ in range(MAX_TOOL_ITERATIONS):
             if before_completion is not None:
                 before_completion()
@@ -775,6 +788,14 @@ def run_turn(client: httpx.Client, model: ModelInfo,
                 reasoning_effort=reasoning_effort,
                 tool_subset=tool_subset,
             )
+            if (content or "").strip():
+                conversation_prefaced = True
+            if tool_calls and not conversation_prefaced:
+                content = SILENT_TOOL_PREFACE
+                sink.on_token(content, is_thought=False)
+                sink.print(content, style="bright_white", highlight=False,
+                           markup=False)
+                conversation_prefaced = True
             # Build assistant message; OpenAI shape requires content key
             # even when tool_calls present.
             asst_msg: dict = {"role": "assistant", "content": content or None}
@@ -801,7 +822,7 @@ def run_turn(client: httpx.Client, model: ModelInfo,
                 return  # done
 
             # Execute each tool call in order.
-            for tc in tool_calls:
+            for call_index, tc in enumerate(tool_calls):
                 name = tc["function"]["name"]
                 args = tc["_parsed_args"]
                 # Announce *before* dispatch so the user has something on
@@ -866,6 +887,35 @@ def run_turn(client: httpx.Client, model: ModelInfo,
                     "tool_call_id": tc["id"],
                     "content": json.dumps(context_result, ensure_ascii=False),
                 })
+                if reason == USER_DECLINED_REASON:
+                    # OpenAI chat history requires one tool result for every
+                    # call in the assistant message. Cancel any sibling calls
+                    # without executing them before ending the turn.
+                    for remaining in tool_calls[call_index + 1:]:
+                        cancelled = {
+                            "ok": False,
+                            "error": "cancelled because the user declined "
+                                     "another action in this tool batch",
+                        }
+                        remaining_name = remaining["function"]["name"]
+                        sink.on_tool_result(remaining_name, False, cancelled)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": remaining["id"],
+                            "content": json.dumps(cancelled,
+                                                  ensure_ascii=False),
+                        })
+                    sink.on_token(USER_DECLINED_FOLLOWUP,
+                                  is_thought=False)
+                    sink.print(USER_DECLINED_FOLLOWUP,
+                               style="bright_white", highlight=False,
+                               markup=False)
+                    messages.append({
+                        "role": "assistant",
+                        "content": USER_DECLINED_FOLLOWUP,
+                    })
+                    sink.on_turn_end(stopped_reason="user_declined")
+                    return
             # Loop back: model gets to read tool results and decide next.
         console.print("[yellow]   ⚠ hit max tool iterations, stopping[/yellow]")
         sink.on_turn_end(stopped_reason="max_iterations")
