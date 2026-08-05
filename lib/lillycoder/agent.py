@@ -429,6 +429,36 @@ def _route_content_chunk(console: Console, chunk: str, state: dict,
             state["in_thought"] = True
 
 
+def _flush_content_state(console: Console, state: dict,
+                         show_thoughts: bool) -> bool:
+    """Emit text retained only to recognize a control tag across chunks.
+
+    The streaming parser keeps up to six trailing characters in ``carry`` so
+    that a later chunk can complete ``<think>`` or ``</think>``. Once the
+    server has ended the stream, no later chunk can arrive and that ambiguity
+    is resolved: the retained characters are ordinary response text and must
+    be emitted. The same applies to an incomplete Harmony marker outside a
+    channel-name header.
+
+    Returns True when something was rendered visibly, allowing the caller to
+    preserve its trailing-newline behavior.
+    """
+    pending = state.get("carry", "")
+    state["carry"] = ""
+
+    harmony_carry = state.get("harmony_carry", "")
+    state["harmony_carry"] = ""
+    if state.get("harmony_mode", "normal") != "channel_name":
+        pending += harmony_carry
+
+    if not pending:
+        return False
+    in_thought = bool(state.get("in_thought"))
+    _emit_segment(console, pending, in_thought=in_thought,
+                  show_thoughts=show_thoughts)
+    return not in_thought or show_thoughts
+
+
 def _resolve_max_tokens(model: ModelInfo, messages: list[dict],
                         setting: Optional[int],
                         tools: Optional[list[dict]] = None) -> int:
@@ -587,6 +617,8 @@ async def _stream_one_completion(client: httpx.Client, model: ModelInfo,
                     _route_content_chunk(console, content, think_state,
                                           show_thoughts)
                 _parse_tool_calls_from_chunk(d, accum_tools)
+        if _flush_content_state(console, think_state, show_thoughts):
+            printed_any = True
     except KeyboardInterrupt:
         interrupted = True
         if spinner_active:

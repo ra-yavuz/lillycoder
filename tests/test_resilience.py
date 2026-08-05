@@ -254,6 +254,45 @@ def test_http_error_is_raised_instead_of_becoming_empty_reply():
         client.close()
 
 
+def test_successful_stream_flushes_final_parser_carry():
+    expected = "hi. What are we working on?"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        events = [
+            {"choices": [{"delta": {"content": "hi. What are we "}}]},
+            {"choices": [{"delta": {"content": "working on?"},
+                          "finish_reason": "stop"}]},
+        ]
+        body = "".join(f"data: {json.dumps(event)}\n\n" for event in events)
+        body += "data: [DONE]\n\n"
+        return httpx.Response(
+            200,
+            text=body,
+            headers={"content-type": "text/event-stream"},
+            request=request,
+        )
+
+    endpoint = discovery.Endpoint(
+        base_url="http://test/v1", label="test", models=["model"],
+        raw_url="http://test/v1/models",
+    )
+    model = ModelInfo(alias="model", endpoint=endpoint, context_window=8192)
+    client = httpx.Client(
+        base_url="http://test/v1", transport=httpx.MockTransport(handler),
+    )
+    sink = RecordingSink()
+    try:
+        content, tool_calls = asyncio.run(agent._stream_one_completion(
+            client, model, [{"role": "user", "content": "hi"}], sink,
+        ))
+    finally:
+        client.close()
+
+    assert content == expected
+    assert sink.text == expected
+    assert tool_calls == []
+
+
 def test_explicit_output_cap_cannot_overflow_remaining_context():
     endpoint = discovery.Endpoint(
         base_url="http://test/v1", label="test", models=["model"],

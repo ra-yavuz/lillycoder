@@ -1,3 +1,13 @@
+lillycoder (0.3.1-1) unstable; urgency=low
+
+  * Flush the stream parser's final look-behind buffer when a model response
+    ends, preventing the terminal from dropping the last six characters while
+    still recognizing think and Harmony markers split across chunks.
+  * Add an end-to-end streamed-response regression test for the exact
+    mid-word truncation reported with Gemma.
+
+ -- Ramazan Yavuz <yavuzramazan1994@gmail.com>  Wed, 05 Aug 2026 13:28:00 +0300
+
 lillycoder (0.3.0-1) unstable; urgency=low
 
   * Discover every running Hydra endpoint, including dynamically assigned
